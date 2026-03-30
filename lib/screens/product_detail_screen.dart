@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:xillafit_flutter/features/catalog/data/clothing_item_model.dart';
+import 'package:xillafit_flutter/features/catalog/presentation/catalog_providers.dart';
 import 'package:xillafit_flutter/screens/payment_submission_screen.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
 import 'package:xillafit_flutter/widgets/common/app_card.dart';
@@ -7,73 +10,123 @@ import 'package:xillafit_flutter/widgets/common/input_field.dart';
 import 'package:xillafit_flutter/widgets/common/primary_button.dart';
 import 'package:xillafit_flutter/widgets/common/quantity_stepper.dart';
 
-class ProductDetailScreen extends StatelessWidget {
+class ProductDetailArgs {
+  final String? itemId;
+  final ClothingItemModel? item;
+
+  const ProductDetailArgs({this.itemId, this.item});
+}
+
+class ProductDetailScreen extends ConsumerWidget {
   static const routeName = '/product-detail';
 
   const ProductDetailScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final args = ModalRoute.of(context)?.settings.arguments;
+    final detailArgs = args is ProductDetailArgs ? args : null;
+
+    final inlineItem = detailArgs?.item;
+    final itemId = detailArgs?.itemId ?? inlineItem?.id;
+
+    final itemAsync = itemId == null
+        ? const AsyncData<ClothingItemModel?>(null)
+        : ref.watch(clothingItemDetailProvider(itemId));
+
     return Scaffold(
       backgroundColor: AppColors.surface,
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              color: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              child: Row(
-                children: [
-                  Text('1', style: AppTextStyles.caption.copyWith(color: AppColors.text, fontWeight: FontWeight.w700)),
-                  const SizedBox(width: 4),
-                  Text('Design Review', style: AppTextStyles.caption.copyWith(color: AppColors.goldDark, fontWeight: FontWeight.w700)),
-                  const Expanded(child: Divider(indent: 8, endIndent: 8)),
-                  Text('2 Details', style: AppTextStyles.caption),
-                  const Expanded(child: Divider(indent: 8, endIndent: 8)),
-                  Text('3 Payment', style: AppTextStyles.caption),
-                  const Expanded(child: Divider(indent: 8, endIndent: 8)),
-                  Text('4 Done', style: AppTextStyles.caption),
-                ],
-              ),
+      body: itemAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        error: (error, stack) => Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              'Could not load product details.\n$error',
+              style: AppTextStyles.caption.copyWith(color: AppColors.goldDark),
+              textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 12),
-            AppCard(
-              child: Row(
-                children: [
-                  Container(
-                    width: 60,
-                    height: 60,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFF3D0),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Text('👕', style: TextStyle(fontSize: 28)),
+          ),
+        ),
+        data: (fetchedItem) {
+          final item = inlineItem ?? fetchedItem;
+          if (item == null) {
+            return Center(
+              child: Text(
+                'Product not found.',
+                style: AppTextStyles.caption.copyWith(color: AppColors.goldDark),
+              ),
+            );
+          }
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  color: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  child: Row(
+                    children: [
+                      Text('1', style: AppTextStyles.caption.copyWith(color: AppColors.text, fontWeight: FontWeight.w700)),
+                      const SizedBox(width: 4),
+                      Text('Design Review', style: AppTextStyles.caption.copyWith(color: AppColors.goldDark, fontWeight: FontWeight.w700)),
+                      const Expanded(child: Divider(indent: 8, endIndent: 8)),
+                      Text('2 Details', style: AppTextStyles.caption),
+                      const Expanded(child: Divider(indent: 8, endIndent: 8)),
+                      Text('3 Payment', style: AppTextStyles.caption),
+                      const Expanded(child: Divider(indent: 8, endIndent: 8)),
+                      Text('4 Done', style: AppTextStyles.caption),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Custom Design', style: AppTextStyles.body.copyWith(fontWeight: FontWeight.w700)),
-                        Text('T-Shirt · Base ₱350/pc', style: AppTextStyles.caption),
-                        const SizedBox(height: 6),
-                        Wrap(
-                          spacing: 6,
+                ),
+                const SizedBox(height: 12),
+                AppCard(
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 60,
+                        height: 60,
+                        clipBehavior: Clip.antiAlias,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF3D0),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: (item.previewImageUrl != null && item.previewImageUrl!.isNotEmpty)
+                            ? Image.network(
+                                item.previewImageUrl!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (BuildContext context, Object error, StackTrace? stackTrace) =>
+                                    const Icon(Icons.checkroom, size: 28),
+                              )
+                            : const Icon(Icons.checkroom, size: 28),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            StatusBadge(text: 'Base color', type: BadgeType.gold),
-                            StatusBadge(text: 'Logo print', type: BadgeType.blue),
+                            Text(item.name, style: AppTextStyles.body.copyWith(fontWeight: FontWeight.w700)),
+                            Text(
+                              '${item.availabilityStatus ?? 'available'} · ${item.priceLabel}',
+                              style: AppTextStyles.caption,
+                            ),
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 6,
+                              children: [
+                                StatusBadge(text: 'Category item', type: BadgeType.gold),
+                                if ((item.description ?? '').isNotEmpty) const StatusBadge(text: 'Has description', type: BadgeType.blue),
+                              ],
+                            ),
                           ],
                         ),
-                      ],
-                    ),
+                      ),
+                      Text('✏ Edit', style: AppTextStyles.body.copyWith(color: AppColors.goldDark, fontWeight: FontWeight.w600, fontSize: 12)),
+                    ],
                   ),
-                  Text('✏ Edit', style: AppTextStyles.body.copyWith(color: AppColors.goldDark, fontWeight: FontWeight.w600, fontSize: 12)),
-                ],
-              ),
-            ),
+                ),
             const SizedBox(height: 12),
             AppCard(
               child: Column(
@@ -147,7 +200,7 @@ class ProductDetailScreen extends StatelessWidget {
               ),
               child: Column(
                 children: [
-                  _sum('Items (6 pcs × ₱350)', '₱2,100'),
+                  _sum('Base item', item.priceLabel),
                   _sum('Design fee', '₱500'),
                   _sum('Delivery', 'TBD'),
                   Divider(color: AppColors.border.withValues(alpha: 0.9)),
@@ -155,7 +208,7 @@ class ProductDetailScreen extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text('Est. Total', style: AppTextStyles.heading.copyWith(color: AppColors.muted)),
-                      Text('₱2,600', style: AppTextStyles.price.copyWith(color: AppColors.goldDark, fontSize: 26)),
+                      Text(item.priceLabel, style: AppTextStyles.price.copyWith(color: AppColors.goldDark, fontSize: 26)),
                     ],
                   ),
                   const SizedBox(height: 14),
@@ -166,8 +219,10 @@ class ProductDetailScreen extends StatelessWidget {
                 ],
               ),
             ),
-          ],
-        ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

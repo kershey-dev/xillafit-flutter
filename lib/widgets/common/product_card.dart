@@ -8,6 +8,7 @@ class ProductCard extends StatelessWidget {
   final String name;
   final String subtitle;
   final String price;
+  final String? imageUrl;
   final String? badge;
   final VoidCallback? onTap;
   final VoidCallback? onCustomize;
@@ -17,6 +18,7 @@ class ProductCard extends StatelessWidget {
     required this.name,
     required this.subtitle,
     required this.price,
+    this.imageUrl,
     this.badge,
     this.onTap,
     this.onCustomize,
@@ -73,13 +75,29 @@ class ProductCard extends StatelessWidget {
                       top: 10,
                       child: Icon(Icons.image_outlined, size: 16, color: Color(0x998A8A8A)),
                     ),
-                    Center(
-                      child: Icon(
-                        Icons.checkroom_rounded,
-                        size: 72,
-                        color: AppColors.muted.withValues(alpha: 0.45),
+                    if (imageUrl != null && imageUrl!.isNotEmpty)
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(0),
+                        child: Image.network(
+                          imageUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (BuildContext context, Object error, StackTrace? stackTrace) => Center(
+                            child: Icon(
+                              Icons.checkroom_rounded,
+                              size: 72,
+                              color: AppColors.muted.withValues(alpha: 0.45),
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      Center(
+                        child: Icon(
+                          Icons.checkroom_rounded,
+                          size: 72,
+                          color: AppColors.muted.withValues(alpha: 0.45),
+                        ),
                       ),
-                    ),
                     if (badge != null)
                       Positioned(
                         top: 8,

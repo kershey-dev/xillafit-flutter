@@ -67,6 +67,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
     _clearFieldErrors();
+    debugPrint('[AUTH][UI] submit pressed. tab=$_tab');
     final emailErr = _validateEmail(_emailController.text);
     final passErr = _validatePassword(_passwordController.text);
     if (emailErr != null || passErr != null) {
@@ -79,16 +80,24 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     setState(() => _loading = true);
     final repo = ref.read(authRepositoryProvider);
+    final email = _emailController.text.trim();
 
     try {
       if (_tab == AuthTab.signIn) {
+        debugPrint('[AUTH][UI] login attempt for email=$email');
         await repo.signInWithEmail(
-          email: _emailController.text,
+          email: email,
           password: _passwordController.text,
         );
+        final session = ref.read(authSessionProvider).asData?.value;
+        debugPrint(
+          '[AUTH][UI] login completed. '
+          'sessionNow=${session == null ? 'none' : 'userId=${session.user.id}'}',
+        );
       } else {
+        debugPrint('[AUTH][UI] signup attempt for email=$email');
         final res = await repo.signUpWithEmail(
-          email: _emailController.text,
+          email: email,
           password: _passwordController.text,
         );
         if (!mounted) return;
@@ -104,10 +113,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         }
       }
     } on AuthException catch (e) {
+      debugPrint(
+        '[AUTH][UI] AuthException: message="${e.message}", '
+        'statusCode=${e.statusCode}, code=${e.code}',
+      );
       if (mounted) {
         setState(() => _formError = e.message);
       }
     } catch (e) {
+      debugPrint('[AUTH][UI] Unexpected auth error: $e');
       if (mounted) {
         setState(() => _formError = e.toString());
       }

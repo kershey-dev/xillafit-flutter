@@ -17,6 +17,7 @@ import 'package:xillafit_flutter/screens/product_detail_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  debugPrint('[SUPABASE] Bootstrapping app...');
 
   if (!SupabaseEnv.isConfigured) {
     throw StateError(
@@ -28,6 +29,10 @@ Future<void> main() async {
   await Supabase.initialize(
     url: SupabaseEnv.url,
     anonKey: SupabaseEnv.anonKey,
+  );
+  debugPrint(
+    '[SUPABASE] Initialized with URL=${SupabaseEnv.url} '
+    '(anonKeyLength=${SupabaseEnv.anonKey.length})',
   );
 
   runApp(

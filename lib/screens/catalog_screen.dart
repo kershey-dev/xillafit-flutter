@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:xillafit_flutter/features/catalog/data/category_model.dart';
+import 'package:xillafit_flutter/features/catalog/data/clothing_item_model.dart';
+import 'package:xillafit_flutter/features/catalog/presentation/catalog_providers.dart';
 import 'package:xillafit_flutter/screens/product_detail_screen.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
 import 'package:xillafit_flutter/widgets/common/filter_chip_pill.dart';
 import 'package:xillafit_flutter/widgets/common/product_card.dart';
 import 'package:xillafit_flutter/widgets/common/search_bar_widget.dart';
 
-class CatalogScreen extends StatelessWidget {
+class CatalogScreen extends ConsumerWidget {
   static const routeName = '/catalog';
   final bool showScaffold;
 
@@ -14,18 +18,13 @@ class CatalogScreen extends StatelessWidget {
   static const double _gridCardExtent = 288;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final width = MediaQuery.of(context).size.width;
     final columns = width > 520 ? 3 : 2;
 
-    final products = [
-      ('Classic Brand', 'T-Shirt · Cotton · 5 colors', '₱350', 'New'),
-      ('Minimal Mono', 'T-Shirt · Cotton · 3 colors', '₱320', null),
-      ('Sublimation Jersey', 'Jersey · Polyester', '₱480', null),
-      ('Corporate Polo', 'Polo Shirt · Drifit', '₱420', null),
-      ('Hoodie Pro', 'Hoodie · Fleece', '₱650', null),
-      ('Verde Sports', 'Jersey · Sublimation', '₱450', null),
-    ];
+    final categoriesAsync = ref.watch(categoriesProvider);
+    final itemsAsync = ref.watch(clothingItemsProvider);
+    final selectedCategoryId = ref.watch(selectedCategoryIdProvider);
 
     final bottomInset = MediaQuery.paddingOf(context).bottom;
 
@@ -40,7 +39,13 @@ class CatalogScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('COLLECTION', style: AppTextStyles.title.copyWith(fontSize: 22, letterSpacing: 1.2)),
-                  Text('68 items · Showing 1–12', style: AppTextStyles.caption),
+                  Text(
+                    itemsAsync.maybeWhen(
+                      data: (items) => '${items.length} items',
+                      orElse: () => 'Loading items...',
+                    ),
+                    style: AppTextStyles.caption,
+                  ),
                 ],
               ),
               const Spacer(),
@@ -60,41 +65,92 @@ class CatalogScreen extends StatelessWidget {
           const SizedBox(height: 10),
           SizedBox(
             height: 36,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: const [
-                FilterChipPill(text: 'All', active: true),
-                SizedBox(width: 7),
-                FilterChipPill(text: 'T-Shirts'),
-                SizedBox(width: 7),
-                FilterChipPill(text: 'Jerseys'),
-                SizedBox(width: 7),
-                FilterChipPill(text: 'Polo Shirts'),
-                SizedBox(width: 7),
-                FilterChipPill(text: 'Hoodies'),
-              ],
+            child: categoriesAsync.when(
+              loading: () => const Center(child: SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))),
+              error: (error, stack) => Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Failed to load categories', style: AppTextStyles.caption.copyWith(color: AppColors.goldDark)),
+              ),
+              data: (categories) => ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: categories.length + 1,
+                separatorBuilder: (BuildContext context, int index) => const SizedBox(width: 7),
+                itemBuilder: (context, index) {
+                  if (index == 0) {
+                    return FilterChipPill(
+                      text: 'All',
+                      active: selectedCategoryId == null,
+                      onTap: () => ref.read(selectedCategoryIdProvider.notifier).select(null),
+                    );
+                  }
+                  final category = categories[index - 1];
+                  return FilterChipPill(
+                    text: category.name,
+                    active: selectedCategoryId == category.id,
+                    onTap: () => ref.read(selectedCategoryIdProvider.notifier).select(category.id),
+                  );
+                },
+              ),
             ),
           ),
           const SizedBox(height: 12),
-          GridView.builder(
-            itemCount: products.length,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: columns,
-              crossAxisSpacing: 13,
-              mainAxisSpacing: 13,
-              mainAxisExtent: CatalogScreen._gridCardExtent,
+          itemsAsync.when(
+            loading: () => const Padding(
+              padding: EdgeInsets.symmetric(vertical: 30),
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
             ),
-            itemBuilder: (context, index) {
-              final item = products[index];
-              return ProductCard(
-                name: item.$1,
-                subtitle: item.$2,
-                price: item.$3,
-                badge: item.$4,
-                onTap: () => Navigator.pushNamed(context, ProductDetailScreen.routeName),
-                onCustomize: () => Navigator.pushNamed(context, ProductDetailScreen.routeName),
+            error: (error, stack) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: Text(
+                  'Could not load products.\n$error',
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.caption.copyWith(color: AppColors.goldDark),
+                ),
+              ),
+            ),
+            data: (items) {
+              if (items.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  child: Center(
+                    child: Text(
+                      'No products available for this category yet.',
+                      style: AppTextStyles.caption,
+                    ),
+                  ),
+                );
+              }
+              return GridView.builder(
+                itemCount: items.length,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: columns,
+                  crossAxisSpacing: 13,
+                  mainAxisSpacing: 13,
+                  mainAxisExtent: CatalogScreen._gridCardExtent,
+                ),
+                itemBuilder: (context, index) {
+                  final item = items[index];
+                  return ProductCard(
+                    name: item.name,
+                    subtitle: _buildSubtitle(item, categoriesAsync.asData?.value),
+                    price: item.priceLabel,
+                    imageUrl: item.previewImageUrl,
+                    badge: index == 0 ? 'New' : null,
+                    onTap: () => Navigator.pushNamed(
+                      context,
+                      ProductDetailScreen.routeName,
+                      arguments: ProductDetailArgs(itemId: item.id),
+                    ),
+                    onCustomize: () => Navigator.pushNamed(
+                      context,
+                      ProductDetailScreen.routeName,
+                      arguments: ProductDetailArgs(itemId: item.id),
+                    ),
+                  );
+                },
               );
             },
           ),
@@ -107,5 +163,25 @@ class CatalogScreen extends StatelessWidget {
       backgroundColor: AppColors.surface,
       body: content,
     );
+  }
+
+  String _buildSubtitle(ClothingItemModel item, List<CategoryModel>? categories) {
+    String? categoryName;
+    if (categories != null) {
+      for (final category in categories) {
+        if (category.id == item.categoryId) {
+          categoryName = category.name;
+          break;
+        }
+      }
+    }
+    final statusRaw = (item.availabilityStatus ?? 'available').trim();
+    final status = statusRaw.isEmpty
+        ? 'Available'
+        : statusRaw[0].toUpperCase() + statusRaw.substring(1);
+    if (categoryName != null && categoryName.isNotEmpty) {
+      return '$categoryName · $status';
+    }
+    return status;
   }
 }
