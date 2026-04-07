@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:xillafit_flutter/app_colors.dart';
 import 'package:xillafit_flutter/app_text_styles.dart';
 
-/// Six tabs: Home, Shop, Cart, Messages, Notifications, Profile.
+/// Five tabs: Home, Cart, Messages, Notifications, Profile.
 class BottomNavBar extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
@@ -17,7 +17,6 @@ class BottomNavBar extends StatelessWidget {
   Widget build(BuildContext context) {
     const items = <(IconData, String)>[
       (Icons.home_outlined, 'Home'),
-      (Icons.storefront_outlined, 'Shop'),
       (Icons.shopping_bag_outlined, 'Cart'),
       (Icons.chat_bubble_outline, 'Chat'),
       (Icons.notifications_none, 'Notifs'),
@@ -48,7 +47,7 @@ class BottomNavBar extends StatelessWidget {
                         color: active ? AppColors.gold : AppColors.border,
                         borderRadius: BorderRadius.circular(2),
                         boxShadow: active
-                            ? const [BoxShadow(color: Color(0x66C9902A), blurRadius: 6)]
+                            ? const [BoxShadow(color: Color(0x66F59E0B), blurRadius: 6)]
                             : null,
                       ),
                     ),

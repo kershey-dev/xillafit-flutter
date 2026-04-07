@@ -23,7 +23,7 @@ class ClothingItemModel {
     this.basePrice,
   });
 
-  bool get isAvailable => (availabilityStatus ?? 'available') == 'available';
+  bool get isAvailable => (availabilityStatus ?? 'available').trim().toLowerCase() == 'available';
 
   String get priceLabel {
     if (basePrice != null) {

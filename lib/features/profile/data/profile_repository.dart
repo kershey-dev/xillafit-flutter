@@ -2,7 +2,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:xillafit_flutter/features/profile/data/profile_model.dart';
 
 class ProfileRepository {
-  SupabaseClient get _client => Supabase.instance.client;
+  ProfileRepository({required SupabaseClient client}) : _client = client;
+  final SupabaseClient _client;
 
   /// Fetch the currently logged-in user's row from `public.profiles`.
   ///

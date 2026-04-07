@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:xillafit_flutter/core/config/app_links.dart';
 import 'package:xillafit_flutter/features/catalog/data/clothing_item_model.dart';
 import 'package:xillafit_flutter/features/catalog/presentation/catalog_providers.dart';
+import 'package:xillafit_flutter/features/cart/presentation/cart_provider.dart';
 import 'package:xillafit_flutter/screens/payment_submission_screen.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
 import 'package:xillafit_flutter/widgets/common/app_card.dart';
@@ -17,13 +20,28 @@ class ProductDetailArgs {
   const ProductDetailArgs({this.itemId, this.item});
 }
 
-class ProductDetailScreen extends ConsumerWidget {
+class ProductDetailScreen extends ConsumerStatefulWidget {
   static const routeName = '/product-detail';
 
   const ProductDetailScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ProductDetailScreen> createState() =>
+      _ProductDetailScreenState();
+}
+
+class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
+  int _quantity = 1;
+  final _notesController = TextEditingController();
+
+  @override
+  void dispose() {
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final args = ModalRoute.of(context)?.settings.arguments;
     final detailArgs = args is ProductDetailArgs ? args : null;
 
@@ -37,14 +55,29 @@ class ProductDetailScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: AppColors.surface,
       body: itemAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        loading: () =>
+            const Center(child: CircularProgressIndicator(strokeWidth: 2)),
         error: (error, stack) => Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
-            child: Text(
-              'Could not load product details.\n$error',
-              style: AppTextStyles.caption.copyWith(color: AppColors.goldDark),
-              textAlign: TextAlign.center,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Could not load product details.\n$error',
+                  style:
+                      AppTextStyles.caption.copyWith(color: AppColors.goldDark),
+                  textAlign: TextAlign.center,
+                ),
+                if (itemId != null) ...[
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () =>
+                        ref.invalidate(clothingItemDetailProvider(itemId)),
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ],
             ),
           ),
         ),
@@ -54,10 +87,14 @@ class ProductDetailScreen extends ConsumerWidget {
             return Center(
               child: Text(
                 'Product not found.',
-                style: AppTextStyles.caption.copyWith(color: AppColors.goldDark),
+                style:
+                    AppTextStyles.caption.copyWith(color: AppColors.goldDark),
               ),
             );
           }
+
+          final estimatedTotal = (item.basePrice ?? 0) * _quantity;
+
           return SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
             child: Column(
@@ -65,18 +102,16 @@ class ProductDetailScreen extends ConsumerWidget {
               children: [
                 Container(
                   color: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  child: Row(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
                     children: [
-                      Text('1', style: AppTextStyles.caption.copyWith(color: AppColors.text, fontWeight: FontWeight.w700)),
-                      const SizedBox(width: 4),
-                      Text('Design Review', style: AppTextStyles.caption.copyWith(color: AppColors.goldDark, fontWeight: FontWeight.w700)),
-                      const Expanded(child: Divider(indent: 8, endIndent: 8)),
-                      Text('2 Details', style: AppTextStyles.caption),
-                      const Expanded(child: Divider(indent: 8, endIndent: 8)),
-                      Text('3 Payment', style: AppTextStyles.caption),
-                      const Expanded(child: Divider(indent: 8, endIndent: 8)),
-                      Text('4 Done', style: AppTextStyles.caption),
+                      _stepPill('1 Product', true),
+                      _stepPill('2 Details', false),
+                      _stepPill('3 Payment', false),
+                      _stepPill('4 Done', false),
                     ],
                   ),
                 ),
@@ -85,20 +120,23 @@ class ProductDetailScreen extends ConsumerWidget {
                   child: Row(
                     children: [
                       Container(
-                        width: 60,
-                        height: 60,
+                        width: 72,
+                        height: 72,
                         clipBehavior: Clip.antiAlias,
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
                           color: const Color(0xFFFFF3D0),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: (item.previewImageUrl != null && item.previewImageUrl!.isNotEmpty)
+                        child: (item.previewImageUrl != null &&
+                                item.previewImageUrl!.isNotEmpty)
                             ? Image.network(
                                 item.previewImageUrl!,
                                 fit: BoxFit.cover,
-                                errorBuilder: (BuildContext context, Object error, StackTrace? stackTrace) =>
-                                    const Icon(Icons.checkroom, size: 28),
+                                errorBuilder:
+                                    (BuildContext context, Object error,
+                                            StackTrace? stackTrace) =>
+                                        const Icon(Icons.checkroom, size: 28),
                               )
                             : const Icon(Icons.checkroom, size: 28),
                       ),
@@ -107,122 +145,232 @@ class ProductDetailScreen extends ConsumerWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(item.name, style: AppTextStyles.body.copyWith(fontWeight: FontWeight.w700)),
                             Text(
-                              '${item.availabilityStatus ?? 'available'} · ${item.priceLabel}',
+                              item.name,
+                              style: AppTextStyles.body.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            Text(
+                              '${_availabilityLabel(item)} | ${item.priceLabel}',
                               style: AppTextStyles.caption,
                             ),
                             const SizedBox(height: 6),
                             Wrap(
                               spacing: 6,
+                              runSpacing: 6,
                               children: [
-                                StatusBadge(text: 'Category item', type: BadgeType.gold),
-                                if ((item.description ?? '').isNotEmpty) const StatusBadge(text: 'Has description', type: BadgeType.blue),
+                                const StatusBadge(
+                                  text: 'Simple mobile ordering',
+                                  type: BadgeType.gold,
+                                ),
+                                if ((item.description ?? '').isNotEmpty)
+                                  const StatusBadge(
+                                    text: 'Real product item',
+                                    type: BadgeType.blue,
+                                  ),
                               ],
                             ),
                           ],
                         ),
                       ),
-                      Text('✏ Edit', style: AppTextStyles.body.copyWith(color: AppColors.goldDark, fontWeight: FontWeight.w600, fontSize: 12)),
                     ],
                   ),
                 ),
-            const SizedBox(height: 12),
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Garment Options', style: AppTextStyles.heading),
-                  SizedBox(height: 12),
-                  InputField(label: 'Fabric / Material', hint: 'Cotton 100%'),
-                  SizedBox(height: 12),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
+                const SizedBox(height: 12),
+                AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _StaticPill('Front', true),
-                      _StaticPill('Back', false),
-                      _StaticPill('Left Sleeve', false),
-                      _StaticPill('Right Sleeve', false),
+                      Text('Order Notes', style: AppTextStyles.heading),
+                      const SizedBox(height: 12),
+                      InputField(
+                        label: 'Notes (optional)',
+                        hint:
+                            'e.g., preferred size mix, delivery reminders...',
+                        maxLines: 3,
+                        controller: _notesController,
+                      ),
                     ],
                   ),
-                  SizedBox(height: 12),
-                  InputField(label: 'Design / Production Notes (optional)', hint: 'e.g., exact Pantone colors...', maxLines: 3),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+                ),
+                const SizedBox(height: 12),
+                AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Size & Quantity', style: AppTextStyles.heading),
-                      const Spacer(),
-                      const StatusBadge(text: '0 pcs · min 6', type: BadgeType.gold),
+                      Text(
+                        'Need full customization?',
+                        style: AppTextStyles.heading,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'For 3D design editing and advanced customization, continue on the web configurator.',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.muted,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      OutlineButtonX(
+                        text: 'Open Web Customizer',
+                        onPressed: _openCustomizationWeb,
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  ...[
-                    ('XS', 0, '—'),
-                    ('S', 0, '—'),
-                    ('M', 3, '₱1,050'),
-                    ('L', 3, '₱1,050'),
-                  ].map(
-                    (row) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Row(
+                ),
+                const SizedBox(height: 12),
+                AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         children: [
-                          SizedBox(width: 30, child: Text(row.$1, style: AppTextStyles.body.copyWith(fontWeight: FontWeight.w600))),
-                          const SizedBox(width: 8),
-                          QuantityStepper(value: row.$2),
+                          Text('Quantity', style: AppTextStyles.heading),
                           const Spacer(),
-                          Text(row.$3, style: AppTextStyles.caption.copyWith(fontWeight: FontWeight.w600, color: row.$3 == '—' ? AppColors.muted : AppColors.text)),
+                          StatusBadge(
+                            text: '$_quantity item(s)',
+                            type: BadgeType.gold,
+                          ),
                         ],
                       ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppColors.card,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.gold, width: 1.5),
-                boxShadow: const [
-                  BoxShadow(color: Color(0x0F000000), blurRadius: 16, offset: Offset(0, 6)),
-                ],
-              ),
-              child: Column(
-                children: [
-                  _sum('Base item', item.priceLabel),
-                  _sum('Design fee', '₱500'),
-                  _sum('Delivery', 'TBD'),
-                  Divider(color: AppColors.border.withValues(alpha: 0.9)),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Est. Total', style: AppTextStyles.heading.copyWith(color: AppColors.muted)),
-                      Text(item.priceLabel, style: AppTextStyles.price.copyWith(color: AppColors.goldDark, fontSize: 26)),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          QuantityStepper(
+                            value: _quantity,
+                            onMinus: _quantity > 1
+                                ? () => setState(() => _quantity -= 1)
+                                : null,
+                            onPlus: () => setState(() => _quantity += 1),
+                          ),
+                          const Spacer(),
+                          Text(
+                            _formatAmount(estimatedTotal),
+                            style: AppTextStyles.body.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.text,
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 14),
-                  PrimaryButton(
-                    text: 'Continue to Order Details →',
-                    onPressed: () => Navigator.pushNamed(context, PaymentSubmissionScreen.routeName),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.card,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.gold, width: 1.5),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x0F000000),
+                        blurRadius: 16,
+                        offset: Offset(0, 6),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ),
+                  child: Column(
+                    children: [
+                      _sum('Base item', item.priceLabel),
+                      _sum('Quantity', 'x$_quantity'),
+                      _sum('Delivery', 'TBD'),
+                      Divider(color: AppColors.border.withValues(alpha: 0.9)),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Est. Total',
+                            style: AppTextStyles.heading.copyWith(
+                              color: AppColors.muted,
+                            ),
+                          ),
+                          Text(
+                            _formatAmount(estimatedTotal),
+                            style: AppTextStyles.price.copyWith(
+                              color: AppColors.goldDark,
+                              fontSize: 26,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () {
+                                ref
+                                    .read(cartProvider.notifier)
+                                    .addItem(item, quantity: _quantity);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content:
+                                        Text('${item.name} added to cart.'),
+                                  ),
+                                );
+                              },
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(
+                                  color: AppColors.gold,
+                                  width: 1.5,
+                                ),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                              ),
+                              child: Text(
+                                'Add to Cart',
+                                style: AppTextStyles.body.copyWith(
+                                  color: AppColors.text,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: PrimaryButton(
+                              text: 'Buy Now',
+                              onPressed: () => Navigator.pushNamed(
+                                context,
+                                PaymentSubmissionScreen.routeName,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _stepPill(String text, bool active) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: active ? const Color(0x1AF59E0B) : Colors.transparent,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: active ? AppColors.gold : AppColors.border,
+        ),
+      ),
+      child: Text(
+        text,
+        style: AppTextStyles.caption.copyWith(
+          color: active ? AppColors.goldDark : AppColors.muted,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -245,23 +393,30 @@ class ProductDetailScreen extends ConsumerWidget {
       ),
     );
   }
-}
 
-class _StaticPill extends StatelessWidget {
-  final String text;
-  final bool active;
-  const _StaticPill(this.text, this.active);
+  String _availabilityLabel(ClothingItemModel item) {
+    final raw = (item.availabilityStatus ?? 'available').trim();
+    if (raw.isEmpty) return 'Available';
+    return '${raw[0].toUpperCase()}${raw.substring(1)}';
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: active ? AppColors.gold : Colors.white,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: active ? AppColors.gold : AppColors.border, width: 1.5),
-      ),
-      child: Text(text, style: AppTextStyles.caption.copyWith(fontSize: 12, color: active ? AppColors.text : AppColors.muted, fontWeight: FontWeight.w600)),
+  String _formatAmount(double amount) {
+    if (amount <= 0) return 'Price on request';
+    return 'PHP ${amount.toStringAsFixed(amount % 1 == 0 ? 0 : 2)}';
+  }
+
+  Future<void> _openCustomizationWeb() async {
+    final uri = Uri.parse(AppLinks.customizeUrl);
+    final launched = await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
     );
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not open customization website.'),
+        ),
+      );
+    }
   }
 }

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:xillafit_flutter/screens/cart_placeholder_screen.dart';
-import 'package:xillafit_flutter/screens/catalog_screen.dart';
 import 'package:xillafit_flutter/screens/home_screen.dart';
 import 'package:xillafit_flutter/screens/messages_screen.dart';
 import 'package:xillafit_flutter/screens/notifications_screen.dart';
@@ -21,7 +20,6 @@ class _MainShellState extends State<MainShell> {
 
   final _tabs = const [
     HomeScreen(),
-    CatalogScreen(showScaffold: false),
     CartPlaceholderScreen(),
     MessagesScreen(embeddedInShell: true),
     NotificationsScreen(showScaffold: false),

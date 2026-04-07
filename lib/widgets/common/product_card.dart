@@ -3,25 +3,36 @@ import 'package:xillafit_flutter/app_colors.dart';
 import 'package:xillafit_flutter/app_radius.dart';
 import 'package:xillafit_flutter/app_text_styles.dart';
 import 'package:xillafit_flutter/widgets/common/dark_button.dart';
+import 'package:xillafit_flutter/widgets/common/primary_button.dart';
 
 class ProductCard extends StatelessWidget {
   final String name;
+  final String category;
   final String subtitle;
+  final String? description;
   final String price;
   final String? imageUrl;
   final String? badge;
+  final String? modelLabel;
   final VoidCallback? onTap;
-  final VoidCallback? onCustomize;
+  final VoidCallback? onPrimaryAction;
+  final VoidCallback? onAddToCart;
+  final String primaryActionLabel;
 
   const ProductCard({
     super.key,
     required this.name,
+    required this.category,
     required this.subtitle,
+    this.description,
     required this.price,
     this.imageUrl,
     this.badge,
+    this.modelLabel,
     this.onTap,
-    this.onCustomize,
+    this.onPrimaryAction,
+    this.onAddToCart,
+    this.primaryActionLabel = 'Buy Now',
   });
 
   @override
@@ -29,148 +40,239 @@ class ProductCard extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(AppRadius.card),
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.card,
-          borderRadius: BorderRadius.circular(AppRadius.card),
-          border: Border.all(color: const Color(0x0A000000), width: 1),
-          boxShadow: const [
-            BoxShadow(color: Color(0x12000000), blurRadius: 10, offset: Offset(0, 2)),
-          ],
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: Container(
-                width: double.infinity,
-                alignment: Alignment.center,
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [AppColors.surfaceWarm, AppColors.surface],
-                  ),
-                ),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Positioned(
-                      left: -20,
-                      bottom: -8,
-                      child: Container(
-                        width: 120,
-                        height: 120,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final cardHeight =
+              constraints.maxHeight.isFinite ? constraints.maxHeight : 430.0;
+          final imageHeight = (cardHeight * 0.58).clamp(190.0, 250.0);
+
+          return Container(
+            decoration: BoxDecoration(
+              color: AppColors.card,
+              borderRadius: BorderRadius.circular(AppRadius.card),
+              border: Border.all(color: AppColors.border, width: 1),
+              boxShadow: const [
+                BoxShadow(color: Color(0x12000000), blurRadius: 16, offset: Offset(0, 8)),
+              ],
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  height: imageHeight,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Container(
                         decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: RadialGradient(
-                            colors: [Color(0x44FFFFFF), Colors.transparent],
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Color(0xFFF0EFEA), Color(0xFFE4E2DA)],
                           ),
                         ),
                       ),
-                    ),
-                    const Positioned(
-                      right: 12,
-                      top: 10,
-                      child: Icon(Icons.image_outlined, size: 16, color: Color(0x998A8A8A)),
-                    ),
-                    if (imageUrl != null && imageUrl!.isNotEmpty)
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(0),
-                        child: Image.network(
+                      if (imageUrl != null && imageUrl!.isNotEmpty)
+                        Image.network(
                           imageUrl!,
                           fit: BoxFit.cover,
-                          errorBuilder: (BuildContext context, Object error, StackTrace? stackTrace) => Center(
-                            child: Icon(
-                              Icons.checkroom_rounded,
-                              size: 72,
-                              color: AppColors.muted.withValues(alpha: 0.45),
-                            ),
+                          errorBuilder: (BuildContext context, Object error, StackTrace? stackTrace) => _imageFallback(),
+                        )
+                      else
+                        _imageFallback(),
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.black.withValues(alpha: 0.06),
+                              Colors.transparent,
+                              Colors.black.withValues(alpha: 0.58),
+                            ],
                           ),
                         ),
-                      )
-                    else
-                      Center(
-                        child: Icon(
-                          Icons.checkroom_rounded,
-                          size: 72,
-                          color: AppColors.muted.withValues(alpha: 0.45),
-                        ),
                       ),
-                    if (badge != null)
                       Positioned(
-                        top: 8,
-                        left: 8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: AppColors.gold,
-                            borderRadius: BorderRadius.circular(AppRadius.pill),
-                          ),
-                          child: Text(
-                            badge!,
-                            style: AppTextStyles.caption.copyWith(
-                              color: AppColors.text,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.4,
-                            ),
-                          ),
+                        top: 12,
+                        left: 12,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if ((modelLabel ?? '').isNotEmpty)
+                              _badge(
+                                text: modelLabel!,
+                                background: Colors.black.withValues(alpha: 0.82),
+                                foreground: Colors.white,
+                              ),
+                            if (badge != null) ...[
+                              const SizedBox(height: 6),
+                              _badge(
+                                text: badge!,
+                                background: AppColors.goldBright,
+                                foreground: AppColors.text,
+                              ),
+                            ],
+                          ],
                         ),
                       ),
-                  ],
+                      Positioned(
+                        left: 14,
+                        right: 14,
+                        bottom: 14,
+                        child: DarkButton(
+                          text: 'View Product',
+                          compact: true,
+                          onPressed: onTap,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          category.toUpperCase(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.goldDark,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.0,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.productName.copyWith(
+                            fontSize: 18,
+                            letterSpacing: 0.7,
+                            height: 1.1,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.caption.copyWith(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.muted,
+                            height: 1.2,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          description?.trim().isNotEmpty == true
+                              ? description!.trim()
+                              : 'Crafted for performance and style. Ready to order.',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.body.copyWith(
+                            fontSize: 12,
+                            color: AppColors.muted,
+                            height: 1.3,
+                          ),
+                        ),
+                        const Spacer(),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                price,
+                                maxLines: 1,
+                                style: AppTextStyles.price.copyWith(
+                                  fontSize: 24,
+                                  color: AppColors.text,
+                                  height: 1,
+                                ),
+                              ),
+                            ),
+                            if (onAddToCart != null) ...[
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                width: 48,
+                                height: 48,
+                                child: OutlinedButton(
+                                  onPressed: onAddToCart,
+                                  style: OutlinedButton.styleFrom(
+                                    padding: EdgeInsets.zero,
+                                    backgroundColor: Colors.white,
+                                    side: const BorderSide(
+                                      color: AppColors.border,
+                                      width: 1.2,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                  ),
+                                  child: const Icon(
+                                    Icons.shopping_bag_outlined,
+                                    size: 20,
+                                    color: AppColors.text,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            const SizedBox(width: 8),
+                            SizedBox(
+                              width: 118,
+                              child: PrimaryButton(
+                                text: primaryActionLabel,
+                                onPressed: onPrimaryAction ?? onTap,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTextStyles.productName.copyWith(
-                      fontSize: 15,
-                      letterSpacing: 0.7,
-                      height: 1.1,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTextStyles.caption.copyWith(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                      color: AppColors.muted,
-                      height: 1.2,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    price,
-                    maxLines: 1,
-                    style: AppTextStyles.price.copyWith(
-                      fontSize: 24,
-                      color: AppColors.text,
-                      height: 1,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  DarkButton(
-                    text: 'Customize',
-                    compact: true,
-                    onPressed: onCustomize ?? onTap,
-                  ),
-                ],
-              ),
-            ),
-          ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _imageFallback() {
+    return Center(
+      child: Icon(
+        Icons.checkroom_rounded,
+        size: 84,
+        color: AppColors.muted.withValues(alpha: 0.4),
+      ),
+    );
+  }
+
+  Widget _badge({
+    required String text,
+    required Color background,
+    required Color foreground,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+      ),
+      child: Text(
+        text,
+        style: AppTextStyles.caption.copyWith(
+          color: foreground,
+          fontSize: 9,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.8,
         ),
       ),
     );

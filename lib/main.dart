@@ -5,7 +5,6 @@ import 'package:xillafit_flutter/app_theme.dart';
 import 'package:xillafit_flutter/core/config/supabase_env.dart';
 import 'package:xillafit_flutter/features/auth/presentation/auth_gate.dart';
 import 'package:xillafit_flutter/features/auth/presentation/register_screen.dart';
-import 'package:xillafit_flutter/screens/catalog_screen.dart';
 import 'package:xillafit_flutter/screens/login_screen.dart';
 import 'package:xillafit_flutter/screens/main_shell.dart';
 import 'package:xillafit_flutter/screens/messages_screen.dart';
@@ -56,7 +55,6 @@ class XillaApp extends StatelessWidget {
         LoginScreen.routeName: (_) => const LoginScreen(),
         RegisterScreen.routeName: (_) => const RegisterScreen(),
         MainShell.routeName: (_) => const MainShell(),
-        CatalogScreen.routeName: (_) => const CatalogScreen(),
         ProductDetailScreen.routeName: (_) => const ProductDetailScreen(),
         OrderTrackingScreen.routeName: (_) => const OrderTrackingScreen(),
         OrderHistoryScreen.routeName: (_) => const OrderHistoryScreen(),

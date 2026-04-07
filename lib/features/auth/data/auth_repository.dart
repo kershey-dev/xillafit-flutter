@@ -31,17 +31,36 @@ class AuthRepository {
   Future<AuthResponse> signUpWithEmail({
     required String email,
     required String password,
+    String? fullName,
+    required String municipality,
+    required String barangay,
+    required String streetAddress,
+    required String zipCode,
   }) async {
     final normalizedEmail = email.trim();
     debugPrint('[AUTH] signUpWithEmail() attempt: email=$normalizedEmail');
     final response = await _client.auth.signUp(
       email: normalizedEmail,
       password: password,
+      data: {
+        if ((fullName ?? '').trim().isNotEmpty) 'full_name': fullName!.trim(),
+      },
     );
     debugPrint(
       '[AUTH] signUpWithEmail() response: '
       'hasSession=${response.session != null}, userId=${response.user?.id}',
     );
+    final userId = response.user?.id;
+    if (userId != null) {
+      await _client.from('customer_profiles').upsert({
+        'profile_id': userId,
+        'municipality': municipality,
+        'barangay': barangay,
+        'street_address': streetAddress.trim(),
+        'zip_code': zipCode,
+        'province': 'Bulacan',
+      }, onConflict: 'profile_id');
+    }
     return response;
   }
 

@@ -24,6 +24,10 @@ class ProfileModel {
     this.createdAt,
   });
 
+  bool get hasFullName => (fullName ?? '').trim().isNotEmpty;
+  bool get hasRole => (role ?? '').trim().isNotEmpty;
+  bool get hasEmail => (email ?? '').trim().isNotEmpty;
+
   factory ProfileModel.fromMap(Map<String, dynamic> map) {
     final createdAtRaw = map['created_at'];
     DateTime? createdAt;
