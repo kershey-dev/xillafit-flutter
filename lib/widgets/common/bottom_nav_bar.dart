@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:xillafit_flutter/app_colors.dart';
 import 'package:xillafit_flutter/app_text_styles.dart';
 
-/// Five tabs: Home, Cart, Messages, Notifications, Profile.
 class BottomNavBar extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
@@ -16,58 +15,59 @@ class BottomNavBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const items = <(IconData, String)>[
-      (Icons.home_outlined, 'Home'),
+      (Icons.home_rounded, 'Home'),
       (Icons.shopping_bag_outlined, 'Cart'),
-      (Icons.chat_bubble_outline, 'Chat'),
-      (Icons.notifications_none, 'Notifs'),
-      (Icons.person_outline, 'Profile'),
+      (Icons.chat_bubble_outline_rounded, 'Chat'),
+      (Icons.notifications_none_rounded, 'Alerts'),
+      (Icons.person_outline_rounded, 'Profile'),
     ];
+
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      decoration: const BoxDecoration(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      decoration: BoxDecoration(
         color: Colors.white,
-        border: Border(top: BorderSide(color: AppColors.border)),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFEAEAEA)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
       ),
       child: Row(
         children: List.generate(items.length, (index) {
           final active = currentIndex == index;
           return Expanded(
-            child: InkWell(
+            child: GestureDetector(
               onTap: () => onTap(index),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOut,
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+                decoration: BoxDecoration(
+                  color: active ? AppColors.gold : Colors.transparent,
+                  borderRadius: BorderRadius.circular(999),
+                ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      width: active ? 22 : 18,
-                      height: 3,
-                      decoration: BoxDecoration(
-                        color: active ? AppColors.gold : AppColors.border,
-                        borderRadius: BorderRadius.circular(2),
-                        boxShadow: active
-                            ? const [BoxShadow(color: Color(0x66F59E0B), blurRadius: 6)]
-                            : null,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
                     Icon(
                       items[index].$1,
                       size: 20,
-                      color: active ? AppColors.gold : const Color(0xFFBABAB6),
+                      color: active ? AppColors.text : const Color(0xFF6B7280),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 4),
                     Text(
                       items[index].$2,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: AppTextStyles.caption.copyWith(
-                        fontSize: 8,
-                        letterSpacing: 0.15,
-                        color: active ? AppColors.gold : const Color(0xFFBABAB6),
-                        fontWeight: FontWeight.w600,
+                      style: AppTextStyles.body.copyWith(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: active ? AppColors.text : const Color(0xFF6B7280),
                       ),
                     ),
                   ],

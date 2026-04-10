@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -10,12 +8,8 @@ import 'package:xillafit_flutter/features/catalog/presentation/catalog_providers
 import 'package:xillafit_flutter/features/cart/presentation/cart_provider.dart';
 import 'package:xillafit_flutter/screens/product_detail_screen.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
-import 'package:xillafit_flutter/widgets/common/filter_chip_pill.dart';
-import 'package:xillafit_flutter/widgets/common/primary_button.dart';
-import 'package:xillafit_flutter/widgets/common/product_card.dart';
-import 'package:xillafit_flutter/widgets/common/search_bar_widget.dart';
 
-enum _HomeSort { featured, priceLow, priceHigh, name }
+enum _HomeSort { newest, priceLow, priceHigh, name }
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -26,9 +20,8 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final _searchController = TextEditingController();
-  final _productSectionKey = GlobalKey();
   String? _selectedCategoryId;
-  _HomeSort _sort = _HomeSort.featured;
+  _HomeSort _sort = _HomeSort.newest;
 
   @override
   void initState() {
@@ -49,135 +42,136 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final categoriesAsync = ref.watch(categoriesProvider);
     final itemsAsync = ref.watch(clothingItemsProvider);
+    final categoriesAsync = ref.watch(categoriesProvider);
+    final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth;
-        final isCompact = width < 360;
-        final isNarrow = width < 420;
-        final horizontalPadding = isCompact ? 14.0 : 16.0;
-        final bottomPadding = 28.0 + MediaQuery.viewPaddingOf(context).bottom;
-
-        return ColoredBox(
-          color: AppColors.surface,
-          child: SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(
-              horizontalPadding,
-              18,
-              horizontalPadding,
-              bottomPadding,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _topHeader(isCompact: isCompact),
-                const SizedBox(height: 18),
-                _hero(
-                  isCompact: isCompact,
-                  stackButtons: isCompact,
-                ),
-                const SizedBox(height: 16),
-                SearchBarWidget(
-                  hint: 'Search products...',
-                  controller: _searchController,
-                ),
-                const SizedBox(height: 18),
-                _categoryFilters(categoriesAsync),
-                const SizedBox(height: 20),
-                KeyedSubtree(
-                  key: _productSectionKey,
-                  child: _productSections(
-                    context: context,
-                    categoriesAsync: categoriesAsync,
-                    itemsAsync: itemsAsync,
-                    availableWidth: width - (horizontalPadding * 2),
-                    isCompact: isCompact,
-                    isNarrow: isNarrow,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                _realProductPhotos(itemsAsync),
-                const SizedBox(height: 22),
-                _customizationCta(compact: isCompact),
-              ],
+    return Scaffold(
+      backgroundColor: const Color(0xFFFAFAFA),
+      body: SafeArea(
+        bottom: false,
+        child: itemsAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          error: (error, stack) => Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                'Could not load products.\n$error',
+                textAlign: TextAlign.center,
+                style: AppTextStyles.body.copyWith(color: AppColors.goldDark),
+              ),
             ),
           ),
-        );
-      },
+          data: (items) {
+            final categories = categoriesAsync.asData?.value ?? const <CategoryModel>[];
+            final visibleItems = _filterAndSortItems(items, categories);
+            final heroItem = visibleItems.isNotEmpty ? visibleItems.first : null;
+            final flashItems = visibleItems.take(4).toList();
+
+            return CustomScrollView(
+              physics: const BouncingScrollPhysics(),
+              slivers: [
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(18, 10, 18, 24 + safeBottom),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      _topHeader(),
+                      const SizedBox(height: 18),
+                      _searchRow(),
+                      const SizedBox(height: 16),
+                      if (heroItem != null) _promoBanner(heroItem),
+                      if (heroItem != null) const SizedBox(height: 20),
+                      _sectionTitle('Popular Category'),
+                      const SizedBox(height: 12),
+                      _categoryScroller(categories),
+                      const SizedBox(height: 20),
+                      _flashHeader(),
+                      const SizedBox(height: 12),
+                      _flashGrid(flashItems, categories),
+                      const SizedBox(height: 22),
+                      _customizeCard(),
+                    ]),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
     );
   }
 
-  Widget _topHeader({required bool isCompact}) {
+  Widget _topHeader() {
     final cartCount = ref.watch(cartItemCountProvider);
 
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'XILLAFIT',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTextStyles.largeTitle.copyWith(
-                  fontSize: isCompact ? 28 : 32,
-                  height: 1,
-                  letterSpacing: 1.8,
-                  color: AppColors.text,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Teamwear ordering made simple',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: AppTextStyles.caption.copyWith(
-                  color: AppColors.muted,
-                  fontWeight: FontWeight.w600,
-                  height: 1.3,
-                ),
+        Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x14000000),
+                blurRadius: 10,
+                offset: Offset(0, 3),
               ),
             ],
           ),
+          clipBehavior: Clip.antiAlias,
+          child: Image.asset(
+            'assets/images/xilla-logo.png',
+            fit: BoxFit.cover,
+          ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 10),
+        Expanded(
+          child: RichText(
+            text: TextSpan(
+              children: [
+                TextSpan(
+                  text: 'Xilla',
+                  style: AppTextStyles.body.copyWith(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.goldDark,
+                  ),
+                ),
+                TextSpan(
+                  text: 'fit',
+                  style: AppTextStyles.body.copyWith(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.text,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        _circleButton(icon: Icons.search_rounded, onTap: () {}),
+        const SizedBox(width: 10),
         Stack(
           clipBehavior: Clip.none,
           children: [
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: const Icon(
-                Icons.shopping_bag_outlined,
-                color: AppColors.goldDark,
-                size: 20,
-              ),
-            ),
+            _circleButton(icon: Icons.shopping_bag_outlined, onTap: () => _openCartTab()),
             if (cartCount > 0)
               Positioned(
-                top: -4,
-                right: -4,
+                right: -2,
+                top: -2,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                  decoration: const BoxDecoration(
-                    color: AppColors.goldBright,
-                    shape: BoxShape.circle,
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.gold,
+                    borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
                     '$cartCount',
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.text,
+                    style: AppTextStyles.body.copyWith(
                       fontSize: 10,
                       fontWeight: FontWeight.w800,
+                      color: AppColors.text,
                     ),
                   ),
                 ),
@@ -188,455 +182,447 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _hero({
-    required bool isCompact,
-    required bool stackButtons,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(isCompact ? 18 : 20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.surfaceWarm, Colors.white],
-        ),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: AppColors.border),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 20,
-            offset: Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+  Widget _searchRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
             decoration: BoxDecoration(
-              color: const Color(0xFFFFF3CD),
-              borderRadius: BorderRadius.circular(999),
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFFEAEAEA)),
             ),
-            child: Text(
-              'REAL PRODUCT ORDERING',
-              style: AppTextStyles.caption.copyWith(
-                color: AppColors.goldDark,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.8,
+            child: TextField(
+              controller: _searchController,
+              style: AppTextStyles.body.copyWith(fontWeight: FontWeight.w600),
+              decoration: InputDecoration(
+                hintText: 'Search products',
+                hintStyle: AppTextStyles.body.copyWith(
+                  color: const Color(0xFF9CA3AF),
+                  fontWeight: FontWeight.w500,
+                ),
+                prefixIcon: const Icon(
+                  Icons.search_rounded,
+                  color: Color(0xFF9CA3AF),
+                ),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               ),
             ),
           ),
-          const SizedBox(height: 14),
-          Text(
-            'CUSTOM SPORTSWEAR\nPRINTING',
-            style: AppTextStyles.largeTitle.copyWith(
-              color: AppColors.text,
-              fontSize: isCompact ? 38 : 42,
-              letterSpacing: 1.1,
-              height: 0.95,
+        ),
+        const SizedBox(width: 12),
+        PopupMenuButton<_HomeSort>(
+          initialValue: _sort,
+          onSelected: (value) => setState(() => _sort = value),
+          itemBuilder: (context) => const [
+            PopupMenuItem(value: _HomeSort.newest, child: Text('Newest')),
+            PopupMenuItem(value: _HomeSort.priceLow, child: Text('Price low-high')),
+            PopupMenuItem(value: _HomeSort.priceHigh, child: Text('Price high-low')),
+            PopupMenuItem(value: _HomeSort.name, child: Text('Name A-Z')),
+          ],
+          child: Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFFEAEAEA)),
             ),
+            child: const Icon(Icons.tune_rounded, color: AppColors.text),
           ),
-          const SizedBox(height: 12),
-          Text(
-            'Browse products, compare real photos, and place team orders directly from mobile.',
-            style: AppTextStyles.body.copyWith(
-              color: AppColors.muted,
-              fontWeight: FontWeight.w500,
-              fontSize: 13,
-              height: 1.45,
+        ),
+      ],
+    );
+  }
+
+  Widget _promoBanner(ClothingItemModel item) {
+    return GestureDetector(
+      onTap: () => _openDetail(item),
+      child: Container(
+        height: 178,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          color: Colors.white,
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x12000000),
+              blurRadius: 20,
+              offset: Offset(0, 8),
             ),
-          ),
-          const SizedBox(height: 16),
-          if (stackButtons) ...[
-            PrimaryButton(
-              text: 'Browse Products',
-              onPressed: _scrollToProducts,
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Image.asset(
+                'assets/images/xillfit-auth-bg.png',
+                fit: BoxFit.cover,
+                alignment: const Alignment(0.9, 0),
+                filterQuality: FilterQuality.high,
+              ),
             ),
-            const SizedBox(height: 10),
-            OutlineButtonX(
-              text: 'Start Customizing',
-              onPressed: _openCustomizationWeb,
-            ),
-          ] else
-            Row(
-              children: [
-                Expanded(
-                  child: PrimaryButton(
-                    text: 'Browse Products',
-                    onPressed: _scrollToProducts,
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [
+                      Colors.white.withValues(alpha: 0.96),
+                      Colors.white.withValues(alpha: 0.78),
+                      Colors.white.withValues(alpha: 0.28),
+                      Colors.transparent,
+                    ],
+                    stops: const [0, 0.28, 0.52, 0.9],
                   ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: OutlineButtonX(
-                    text: 'Start Customizing',
-                    onPressed: _openCustomizationWeb,
+              ),
+            ),
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.white.withValues(alpha: 0.05),
+                      Colors.transparent,
+                      Colors.white.withValues(alpha: 0.12),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
-        ],
+            Positioned(
+              left: 18,
+              top: 18,
+              bottom: 16,
+              child: SizedBox(
+                width: 144,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Don't miss out",
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.body.copyWith(
+                        color: AppColors.text,
+                        fontSize: 22,
+                        height: 1.04,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Browse our latest drop and order directly from the app.',
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.body.copyWith(
+                        color: AppColors.text.withValues(alpha: 0.76),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        height: 1.32,
+                      ),
+                    ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(999),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x12000000),
+                            blurRadius: 8,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Text(
+                        'Shop now',
+                        style: AppTextStyles.body.copyWith(
+                          color: AppColors.goldDark,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _categoryFilters(AsyncValue<List<CategoryModel>> categoriesAsync) {
-    return categoriesAsync.when(
-      loading: () => const SizedBox(
-        height: 36,
-        child: Center(
-          child: SizedBox(
-            height: 18,
-            width: 18,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+  Widget _sectionTitle(String title) {
+    return Text(
+      title,
+      style: AppTextStyles.body.copyWith(
+        fontSize: 17,
+        fontWeight: FontWeight.w800,
+        color: AppColors.text,
+      ),
+    );
+  }
+
+  Widget _categoryScroller(List<CategoryModel> categories) {
+    final quick = _pickQuickAccessCategories(categories);
+    return SizedBox(
+      height: 96,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: quick.length + 1,
+        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        itemBuilder: (context, index) {
+          if (index == 0) {
+            return _categoryBubble(
+              label: 'All',
+              active: _selectedCategoryId == null,
+              icon: Icons.grid_view_rounded,
+              onTap: () => setState(() => _selectedCategoryId = null),
+            );
+          }
+          final category = quick[index - 1];
+          return _categoryBubble(
+            label: category.name,
+            active: _selectedCategoryId == category.id,
+            icon: _categoryIcon(category.name),
+            onTap: () => setState(() => _selectedCategoryId = category.id),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _categoryBubble({
+    required String label,
+    required bool active,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: SizedBox(
+        width: 76,
+        child: Column(
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: active ? const Color(0xFFFFF2D6) : Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: active ? AppColors.gold : const Color(0xFFEAEAEA),
+                ),
+              ),
+              child: Icon(
+                icon,
+                color: active ? AppColors.goldDark : const Color(0xFF60636B),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: AppTextStyles.body.copyWith(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: AppColors.text,
+              ),
+            ),
+          ],
         ),
       ),
-      error: (error, stack) => Text(
-        'Could not load categories.',
-        style: AppTextStyles.caption.copyWith(color: AppColors.goldDark),
-      ),
-      data: (categories) {
-        final quickAccess = _pickQuickAccessCategories(categories);
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'SHOP BY CATEGORY',
-              style: AppTextStyles.sectionTitle.copyWith(height: 1),
+    );
+  }
+
+  Widget _flashHeader() {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            'Flash Sale',
+            style: AppTextStyles.body.copyWith(
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              color: AppColors.text,
             ),
-            const SizedBox(height: 12),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
+          ),
+        ),
+        Text(
+          'Ends at',
+          style: AppTextStyles.body.copyWith(
+            color: const Color(0xFF9CA3AF),
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFE7E2),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            '11:12:02',
+            style: AppTextStyles.body.copyWith(
+              color: const Color(0xFFE94F37),
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _flashGrid(List<ClothingItemModel> items, List<CategoryModel> categories) {
+    if (items.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0xFFEAEAEA)),
+        ),
+        child: Text(
+          'No products available yet.',
+          style: AppTextStyles.body.copyWith(color: const Color(0xFF6B7280)),
+        ),
+      );
+    }
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: items.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 14,
+        mainAxisSpacing: 14,
+        childAspectRatio: 0.72,
+      ),
+      itemBuilder: (context, index) {
+        final item = items[index];
+        final rating = _ratingFor(item.id);
+        return GestureDetector(
+          onTap: () => _openDetail(item),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: const Color(0xFFEAEAEA)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  FilterChipPill(
-                    text: 'All',
-                    active: _selectedCategoryId == null,
-                    onTap: () => setState(() => _selectedCategoryId = null),
-                  ),
-                  ...quickAccess.map(
-                    (category) => Padding(
-                      padding: const EdgeInsets.only(left: 8),
-                      child: FilterChipPill(
-                        text: category.name,
-                        active: _selectedCategoryId == category.id,
-                        onTap: () => setState(() => _selectedCategoryId = category.id),
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF5F5F5),
+                        borderRadius: BorderRadius.circular(18),
                       ),
+                      child: Center(
+                        child: (item.previewImageUrl ?? '').isNotEmpty
+                            ? ClipRRect(
+                                borderRadius: BorderRadius.circular(18),
+                                child: Image.network(
+                                  item.previewImageUrl!,
+                                  fit: BoxFit.cover,
+                                  width: double.infinity,
+                                  height: double.infinity,
+                                  errorBuilder: (_, __, ___) => const Icon(
+                                    Icons.checkroom_rounded,
+                                    size: 42,
+                                    color: Color(0xFFB6BCC5),
+                                  ),
+                                ),
+                              )
+                            : const Icon(
+                                Icons.checkroom_rounded,
+                                size: 42,
+                                color: Color(0xFFB6BCC5),
+                              ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    item.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.body.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.text,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          item.priceLabel,
+                          style: AppTextStyles.body.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.text,
+                          ),
+                        ),
+                      ),
+                      const Icon(Icons.star_rounded, color: AppColors.gold, size: 16),
+                      const SizedBox(width: 3),
+                      Text(
+                        rating.toStringAsFixed(1),
+                        style: AppTextStyles.body.copyWith(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _categoryNameFor(item, categories),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.body.copyWith(
+                      fontSize: 11,
+                      color: const Color(0xFF6B7280),
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
               ),
             ),
-          ],
+          ),
         );
       },
     );
   }
 
-  Widget _productSections({
-    required BuildContext context,
-    required AsyncValue<List<CategoryModel>> categoriesAsync,
-    required AsyncValue<List<ClothingItemModel>> itemsAsync,
-    required double availableWidth,
-    required bool isCompact,
-    required bool isNarrow,
-  }) {
-    return itemsAsync.when(
-      loading: () => const Padding(
-        padding: EdgeInsets.symmetric(vertical: 40),
-        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-      ),
-      error: (error, stack) => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Column(
-          children: [
-            Text(
-              'Could not load products.\n$error',
-              textAlign: TextAlign.center,
-              style: AppTextStyles.caption.copyWith(color: AppColors.goldDark),
-            ),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: () => ref.invalidate(clothingItemsProvider),
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
-      ),
-      data: (items) {
-        final categories = categoriesAsync.asData?.value;
-        final visibleItems = _filterAndSortItems(
-          items: items,
-          categories: categories,
-        );
-
-        if (visibleItems.isEmpty) {
-          return _emptyProducts();
-        }
-
-        final featuredItems = visibleItems.take(4).toList();
-        final newArrivals = visibleItems.skip(1).take(3).toList();
-        final newArrivalWidth = math.min<double>(
-          math.max<double>(availableWidth * (isNarrow ? 0.82 : 0.68), 220),
-          280,
-        );
-        final newArrivalHeight = isCompact ? 380.0 : 410.0;
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minWidth: math.max<double>(availableWidth - 148, 180),
-                    maxWidth: availableWidth,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'POPULAR RIGHT NOW',
-                        style: AppTextStyles.heading.copyWith(
-                          letterSpacing: 1,
-                          height: 1,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Real products from the live company catalog.',
-                        style: AppTextStyles.caption.copyWith(
-                          color: AppColors.muted,
-                          height: 1.35,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                _sortMenu(),
-              ],
-            ),
-            const SizedBox(height: 14),
-            ...featuredItems.map(
-              (item) => Padding(
-                padding: const EdgeInsets.only(bottom: 14),
-                child: SizedBox(
-                  height: isCompact ? 410 : 430,
-                  child: ProductCard(
-                    name: item.name,
-                    category: _categoryNameFor(item, categories),
-                    subtitle: _buildSubtitle(
-                      item,
-                      _categoryNameFor(item, categories),
-                    ),
-                    description: item.description,
-                    price: item.priceLabel,
-                    imageUrl: item.previewImageUrl,
-                    modelLabel: _modelLabel(item),
-                    badge: item == featuredItems.first ? 'Popular' : null,
-                    onTap: () => _openDetail(context, item),
-                    primaryActionLabel: 'Buy Now',
-                    onPrimaryAction: () => _openDetail(context, item),
-                    onAddToCart: () => _addToCart(item),
-                  ),
-                ),
-              ),
-            ),
-            if (newArrivals.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(
-                'NEW ARRIVALS',
-                style: AppTextStyles.sectionTitle.copyWith(height: 1),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                height: newArrivalHeight,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: newArrivals.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 14),
-                  itemBuilder: (context, index) {
-                    final item = newArrivals[index];
-                    final category = _categoryNameFor(item, categories);
-                    return SizedBox(
-                      width: newArrivalWidth,
-                      child: ProductCard(
-                        name: item.name,
-                        category: category,
-                        subtitle: _buildSubtitle(item, category),
-                        description: item.description,
-                        price: item.priceLabel,
-                        imageUrl: item.previewImageUrl,
-                        modelLabel: _modelLabel(item),
-                        badge: 'New',
-                        onTap: () => _openDetail(context, item),
-                        primaryActionLabel: 'Buy Now',
-                        onPrimaryAction: () => _openDetail(context, item),
-                        onAddToCart: () => _addToCart(item),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _sortMenu() {
-    return PopupMenuButton<_HomeSort>(
-      initialValue: _sort,
-      onSelected: (value) => setState(() => _sort = value),
-      itemBuilder: (context) => const [
-        PopupMenuItem(
-          value: _HomeSort.featured,
-          child: Text('Featured'),
-        ),
-        PopupMenuItem(
-          value: _HomeSort.priceLow,
-          child: Text('Price: Low-High'),
-        ),
-        PopupMenuItem(
-          value: _HomeSort.priceHigh,
-          child: Text('Price: High-Low'),
-        ),
-        PopupMenuItem(
-          value: _HomeSort.name,
-          child: Text('Name: A-Z'),
-        ),
-      ],
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              _sortLabel(_sort),
-              style: AppTextStyles.caption.copyWith(
-                color: AppColors.text,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(width: 6),
-            const Icon(
-              Icons.swap_vert_rounded,
-              size: 16,
-              color: AppColors.goldDark,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _realProductPhotos(AsyncValue<List<ClothingItemModel>> itemsAsync) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'REAL CUSTOMER PRINTS',
-          style: AppTextStyles.sectionTitle.copyWith(height: 1),
-        ),
-        const SizedBox(height: 12),
-        itemsAsync.when(
-          loading: () => const SizedBox.shrink(),
-          error: (error, stack) => const SizedBox.shrink(),
-          data: (items) {
-            final withImages = items
-                .where((item) => (item.previewImageUrl ?? '').isNotEmpty)
-                .take(3)
-                .toList();
-            if (withImages.isEmpty) return const SizedBox.shrink();
-
-            return SizedBox(
-              height: 160,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: withImages.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 12),
-                itemBuilder: (context, index) {
-                  final item = withImages[index];
-                  return GestureDetector(
-                    onTap: () => _openDetail(context, item),
-                    child: Container(
-                      width: 210,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: AppColors.border),
-                        image: DecorationImage(
-                          image: NetworkImage(item.previewImageUrl!),
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(20),
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.black.withValues(alpha: 0.06),
-                              Colors.black.withValues(alpha: 0.58),
-                            ],
-                          ),
-                        ),
-                        padding: const EdgeInsets.all(14),
-                        alignment: Alignment.bottomLeft,
-                        child: Text(
-                          item.name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTextStyles.body.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _customizationCta({required bool compact}) {
+  Widget _customizeCard() {
     return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: EdgeInsets.all(compact ? 18 : 20),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        color: AppColors.goldBright,
+        color: AppColors.gold,
+        borderRadius: BorderRadius.circular(26),
         boxShadow: const [
           BoxShadow(
             color: Color(0x26F59E0B),
-            blurRadius: 18,
-            offset: Offset(0, 10),
+            blurRadius: 24,
+            offset: Offset(0, 12),
           ),
         ],
       ),
@@ -644,79 +630,70 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'DESIGN YOUR OWN JERSEY',
-            style: AppTextStyles.heading.copyWith(
+            'Need full customization?',
+            style: AppTextStyles.body.copyWith(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
               color: AppColors.text,
-              letterSpacing: 1,
-              height: 1,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Text(
-            'Need the full 3D configurator? Continue on web for advanced customization and design review.',
+            'Open the web studio for full 3D customization, design review, and advanced team ordering.',
             style: AppTextStyles.body.copyWith(
-              color: AppColors.text,
+              color: AppColors.text.withValues(alpha: 0.82),
+              fontSize: 13,
               fontWeight: FontWeight.w500,
-              height: 1.4,
+              height: 1.45,
             ),
           ),
           const SizedBox(height: 14),
-          PrimaryButton(
-            text: 'Start Customizing',
-            onPressed: _openCustomizationWeb,
+          GestureDetector(
+            onTap: _openCustomizationWeb,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                'Start customizing',
+                style: AppTextStyles.body.copyWith(
+                  color: AppColors.text,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _emptyProducts() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        children: [
-          const Icon(
-            Icons.checkroom_rounded,
-            size: 44,
-            color: AppColors.muted,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'No products found',
-            style: AppTextStyles.heading.copyWith(height: 1),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Try a different search or category filter.',
-            textAlign: TextAlign.center,
-            style: AppTextStyles.caption,
-          ),
-        ],
+  Widget _circleButton({required IconData icon, required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: SizedBox(
+        width: 34,
+        height: 34,
+        child: Icon(icon, color: AppColors.text, size: 22),
       ),
     );
   }
 
-  List<ClothingItemModel> _filterAndSortItems({
-    required List<ClothingItemModel> items,
-    required List<CategoryModel>? categories,
-  }) {
+  List<ClothingItemModel> _filterAndSortItems(
+    List<ClothingItemModel> items,
+    List<CategoryModel> categories,
+  ) {
     final query = _searchController.text.trim().toLowerCase();
-
     final filtered = items.where((item) {
-      final categoryName = _categoryNameFor(item, categories);
+      final categoryName = _categoryNameFor(item, categories).toLowerCase();
       final matchesCategory =
           _selectedCategoryId == null || item.categoryId == _selectedCategoryId;
       final matchesQuery = query.isEmpty ||
           item.name.toLowerCase().contains(query) ||
-          categoryName.toLowerCase().contains(query) ||
+          categoryName.contains(query) ||
           (item.description ?? '').toLowerCase().contains(query);
-
       return matchesCategory && matchesQuery;
     }).toList();
 
@@ -728,7 +705,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           return (b.basePrice ?? 0).compareTo(a.basePrice ?? 0);
         case _HomeSort.name:
           return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-        case _HomeSort.featured:
+        case _HomeSort.newest:
           return (b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0))
               .compareTo(a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0));
       }
@@ -737,108 +714,61 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return filtered;
   }
 
-  String _categoryNameFor(
-    ClothingItemModel item,
-    List<CategoryModel>? categories,
-  ) {
-    if (categories == null) return 'Shop';
+  List<CategoryModel> _pickQuickAccessCategories(List<CategoryModel> categories) {
+    if (categories.isEmpty) return const [];
+    return categories.take(6).toList();
+  }
+
+  String _categoryNameFor(ClothingItemModel item, List<CategoryModel> categories) {
     for (final category in categories) {
       if (category.id == item.categoryId) return category.name;
     }
-    return 'Shop';
-  }
-
-  String _buildSubtitle(ClothingItemModel item, String categoryName) {
-    final statusRaw = (item.availabilityStatus ?? 'available').trim();
-    final status = statusRaw.isEmpty
-        ? 'Available'
-        : statusRaw[0].toUpperCase() + statusRaw.substring(1);
-    return '$categoryName | $status';
+    return 'Collection';
   }
 
   String _modelLabel(ClothingItemModel item) {
     final modelUrl = (item.modelFileUrl ?? '').toLowerCase();
     if (modelUrl.contains('hoodie')) return 'Hoodie';
-    if (modelUrl.contains('polo')) return 'Polo Shirt';
-    if (modelUrl.contains('tank')) return 'Tank Top';
-    return 'T-Shirt';
+    if (modelUrl.contains('polo')) return 'Polo';
+    if (modelUrl.contains('tank')) return 'Tank';
+    return 'Shirt';
   }
 
-  String _sortLabel(_HomeSort sort) {
-    switch (sort) {
-      case _HomeSort.featured:
-        return 'Featured';
-      case _HomeSort.priceLow:
-        return 'Low-High';
-      case _HomeSort.priceHigh:
-        return 'High-Low';
-      case _HomeSort.name:
-        return 'A-Z';
-    }
+  IconData _categoryIcon(String name) {
+    final text = name.toLowerCase();
+    if (text.contains('hood')) return Icons.dry_cleaning_outlined;
+    if (text.contains('polo')) return Icons.person_outline_rounded;
+    if (text.contains('jersey')) return Icons.sports_football_rounded;
+    if (text.contains('shirt')) return Icons.checkroom_rounded;
+    return Icons.style_rounded;
   }
 
-  List<CategoryModel> _pickQuickAccessCategories(List<CategoryModel> categories) {
-    const wanted = ['T-Shirts', 'Jerseys', 'Hoodies', 'Polo Shirts'];
-    final picked = <CategoryModel>[];
-
-    for (final label in wanted) {
-      for (final category in categories) {
-        final name = category.name.toLowerCase();
-        final target = label.toLowerCase();
-        if (name == target ||
-            name.contains(target.replaceAll(' ', '')) ||
-            name.contains(target.replaceAll('-', ' ')) ||
-            target.contains(name)) {
-          if (!picked.any((item) => item.id == category.id)) {
-            picked.add(category);
-          }
-          break;
-        }
-      }
-    }
-
-    if (picked.isEmpty) return categories.take(4).toList();
-    return picked;
+  double _ratingFor(String id) {
+    final value = id.codeUnits.fold<int>(0, (sum, item) => sum + item);
+    return 4.1 + ((value % 8) / 10);
   }
 
-  void _scrollToProducts() {
-    final context = _productSectionKey.currentContext;
-    if (context == null) return;
-    Scrollable.ensureVisible(
+  void _openDetail(ClothingItemModel item) {
+    Navigator.pushNamed(
       context,
-      duration: const Duration(milliseconds: 350),
-      curve: Curves.easeOutCubic,
-      alignment: 0.04,
+      ProductDetailScreen.routeName,
+      arguments: ProductDetailArgs(itemId: item.id, item: item),
+    );
+  }
+
+  void _openCartTab() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Use the Cart tab below to review your items.')),
     );
   }
 
   Future<void> _openCustomizationWeb() async {
     final uri = Uri.parse(AppLinks.customizeUrl);
-    final launched = await launchUrl(
-      uri,
-      mode: LaunchMode.externalApplication,
-    );
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!launched && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not open customization website.'),
-        ),
+        const SnackBar(content: Text('Could not open customization website.')),
       );
     }
-  }
-
-  void _openDetail(BuildContext context, ClothingItemModel item) {
-    Navigator.pushNamed(
-      context,
-      ProductDetailScreen.routeName,
-      arguments: ProductDetailArgs(itemId: item.id),
-    );
-  }
-
-  void _addToCart(ClothingItemModel item) {
-    ref.read(cartProvider.notifier).addItem(item);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${item.name} added to cart.')),
-    );
   }
 }

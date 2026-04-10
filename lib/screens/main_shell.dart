@@ -29,12 +29,15 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBody: true,
       body: SafeArea(
         bottom: false,
         child: IndexedStack(index: _index, children: _tabs),
       ),
-      bottomNavigationBar: SafeArea(
-        top: false,
+      bottomNavigationBar: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.paddingOf(context).bottom,
+        ),
         child: BottomNavBar(
           currentIndex: _index,
           onTap: (value) => setState(() => _index = value),
