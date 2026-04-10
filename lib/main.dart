@@ -9,6 +9,7 @@ import 'package:xillafit_flutter/screens/login_screen.dart';
 import 'package:xillafit_flutter/screens/main_shell.dart';
 import 'package:xillafit_flutter/screens/messages_screen.dart';
 import 'package:xillafit_flutter/screens/notifications_screen.dart';
+import 'package:xillafit_flutter/screens/onboarding_screen.dart';
 import 'package:xillafit_flutter/screens/order_history_screen.dart';
 import 'package:xillafit_flutter/screens/order_tracking_screen.dart';
 import 'package:xillafit_flutter/screens/payment_submission_screen.dart';
@@ -54,6 +55,7 @@ class XillaApp extends StatelessWidget {
       routes: {
         LoginScreen.routeName: (_) => const LoginScreen(),
         RegisterScreen.routeName: (_) => const RegisterScreen(),
+        OnboardingScreen.routeName: (_) => const OnboardingScreen(),
         MainShell.routeName: (_) => const MainShell(),
         ProductDetailScreen.routeName: (_) => const ProductDetailScreen(),
         OrderTrackingScreen.routeName: (_) => const OrderTrackingScreen(),

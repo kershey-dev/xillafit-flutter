@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:xillafit_flutter/app_colors.dart';
 import 'package:xillafit_flutter/features/auth/presentation/auth_providers.dart';
-import 'package:xillafit_flutter/screens/login_screen.dart';
 import 'package:xillafit_flutter/screens/main_shell.dart';
+import 'package:xillafit_flutter/screens/onboarding_screen.dart';
 
 /// Root gate: session → main shell, no session → login.
 class AuthGate extends ConsumerWidget {
@@ -18,10 +18,10 @@ class AuthGate extends ConsumerWidget {
         if (session != null) {
           return const MainShell();
         }
-        return const LoginScreen();
+        return const OnboardingScreen();
       },
       loading: () => const _AuthBootstrapSplash(),
-      error: (Object error, StackTrace stack) => const LoginScreen(),
+      error: (Object error, StackTrace stack) => const OnboardingScreen(),
     );
   }
 }
