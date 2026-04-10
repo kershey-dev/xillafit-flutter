@@ -27,16 +27,9 @@ class ProductDetailScreen extends ConsumerStatefulWidget {
 class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   int _quantity = 1;
   int _selectedSize = 1;
-  int _selectedColor = 0;
   bool _expandedDescription = false;
 
   static const _sizes = ['S', 'M', 'L', 'XL'];
-  static const _swatches = [
-    Color(0xFFD1D5DB),
-    Color(0xFF64748B),
-    Color(0xFF0F172A),
-    Color(0xFFE11D48),
-  ];
 
   @override
   Widget build(BuildContext context) {
@@ -287,37 +280,6 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                       ),
                       const SizedBox(height: 18),
                       _optionRow(
-                        title: 'Color',
-                        child: Wrap(
-                          spacing: 10,
-                          children: List.generate(_swatches.length, (index) {
-                            final selected = index == _selectedColor;
-                            return GestureDetector(
-                              onTap: () => setState(() => _selectedColor = index),
-                              child: Container(
-                                width: 24,
-                                height: 24,
-                                padding: const EdgeInsets.all(2),
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: selected ? AppColors.text : Colors.transparent,
-                                    width: 1.5,
-                                  ),
-                                ),
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    color: _swatches[index],
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                              ),
-                            );
-                          }),
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      _optionRow(
                         title: 'Quantity',
                         child: Row(
                           children: [
@@ -449,7 +411,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
-          width: 56,
+          width: 78,
           child: Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Text(

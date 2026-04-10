@@ -12,7 +12,12 @@ import 'package:xillafit_flutter/widgets/app_styles.dart';
 enum _HomeSort { newest, priceLow, priceHigh, name }
 
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({
+    super.key,
+    this.onOpenCart,
+  });
+
+  final VoidCallback? onOpenCart;
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -20,6 +25,8 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
+  final _scrollController = ScrollController();
   String? _selectedCategoryId;
   _HomeSort _sort = _HomeSort.newest;
 
@@ -33,6 +40,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void dispose() {
     _searchController.removeListener(_handleSearchChanged);
     _searchController.dispose();
+    _searchFocusNode.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -69,6 +78,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             final flashItems = visibleItems.take(4).toList();
 
             return CustomScrollView(
+              controller: _scrollController,
               physics: const BouncingScrollPhysics(),
               slivers: [
                 SliverPadding(
@@ -150,12 +160,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
         ),
-        _circleButton(icon: Icons.search_rounded, onTap: () {}),
+        _circleButton(icon: Icons.search_rounded, onTap: _focusSearch),
         const SizedBox(width: 10),
         Stack(
           clipBehavior: Clip.none,
           children: [
-            _circleButton(icon: Icons.shopping_bag_outlined, onTap: () => _openCartTab()),
+            _circleButton(icon: Icons.shopping_bag_outlined, onTap: _openCartTab),
             if (cartCount > 0)
               Positioned(
                 right: -2,
@@ -194,6 +204,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
             child: TextField(
               controller: _searchController,
+              focusNode: _searchFocusNode,
               style: AppTextStyles.body.copyWith(fontWeight: FontWeight.w600),
               decoration: InputDecoration(
                 hintText: 'Search products',
@@ -239,122 +250,131 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _promoBanner(ClothingItemModel item) {
     return GestureDetector(
       onTap: () => _openDetail(item),
-      child: Container(
-        height: 178,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          color: Colors.white,
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x12000000),
-              blurRadius: 20,
-              offset: Offset(0, 8),
-            ),
-          ],
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: Image.asset(
-                'assets/images/xillfit-auth-bg.png',
-                fit: BoxFit.cover,
-                alignment: const Alignment(0.9, 0),
-                filterQuality: FilterQuality.high,
+      child: Transform.translate(
+        offset: const Offset(0, -2),
+        child: Container(
+          height: 178,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            color: Colors.white,
+            border: Border.all(color: const Color(0xFFF5E7C2)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x1AF59E0B),
+                blurRadius: 28,
+                offset: Offset(0, 16),
               ),
-            ),
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                    colors: [
-                      Colors.white.withValues(alpha: 0.96),
-                      Colors.white.withValues(alpha: 0.78),
-                      Colors.white.withValues(alpha: 0.28),
-                      Colors.transparent,
-                    ],
-                    stops: const [0, 0.28, 0.52, 0.9],
+              BoxShadow(
+                color: Color(0x12000000),
+                blurRadius: 18,
+                offset: Offset(0, 8),
+              ),
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: Image.asset(
+                  'assets/images/xillfit-auth-bg.png',
+                  fit: BoxFit.cover,
+                  alignment: const Alignment(0.9, 0),
+                  filterQuality: FilterQuality.high,
+                ),
+              ),
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: [
+                        Colors.white.withValues(alpha: 0.97),
+                        Colors.white.withValues(alpha: 0.82),
+                        Colors.white.withValues(alpha: 0.34),
+                        Colors.transparent,
+                      ],
+                      stops: const [0, 0.28, 0.52, 0.9],
+                    ),
                   ),
                 ),
               ),
-            ),
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.white.withValues(alpha: 0.05),
-                      Colors.transparent,
-                      Colors.white.withValues(alpha: 0.12),
-                    ],
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.white.withValues(alpha: 0.05),
+                        Colors.transparent,
+                        Colors.white.withValues(alpha: 0.12),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-            Positioned(
-              left: 18,
-              top: 18,
-              bottom: 16,
-              child: SizedBox(
-                width: 144,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Don't miss out",
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.body.copyWith(
-                        color: AppColors.text,
-                        fontSize: 22,
-                        height: 1.04,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Browse our latest drop and order directly from the app.',
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.body.copyWith(
-                        color: AppColors.text.withValues(alpha: 0.76),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        height: 1.32,
-                      ),
-                    ),
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(999),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x12000000),
-                            blurRadius: 8,
-                            offset: Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Text(
-                        'Shop now',
+              Positioned(
+                left: 18,
+                top: 18,
+                bottom: 16,
+                child: SizedBox(
+                  width: 144,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Don't miss out",
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: AppTextStyles.body.copyWith(
-                          color: AppColors.goldDark,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
+                          color: AppColors.text,
+                          fontSize: 22,
+                          height: 1.04,
+                          fontWeight: FontWeight.w900,
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 10),
+                      Text(
+                        'Browse our latest drop and order directly from the app.',
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.body.copyWith(
+                          color: AppColors.text.withValues(alpha: 0.76),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          height: 1.32,
+                        ),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(999),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x12000000),
+                              blurRadius: 8,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Text(
+                          'Shop now',
+                          style: AppTextStyles.body.copyWith(
+                            color: AppColors.goldDark,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -757,9 +777,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _openCartTab() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Use the Cart tab below to review your items.')),
-    );
+    widget.onOpenCart?.call();
+  }
+
+  void _focusSearch() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+      );
+    }
+    Future<void>.delayed(const Duration(milliseconds: 60), () {
+      if (!mounted) return;
+      _searchFocusNode.requestFocus();
+    });
   }
 
   Future<void> _openCustomizationWeb() async {

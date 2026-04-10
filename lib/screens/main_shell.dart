@@ -18,12 +18,14 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _index = 0;
 
-  final _tabs = const [
-    HomeScreen(),
-    CartPlaceholderScreen(),
-    MessagesScreen(embeddedInShell: true),
-    NotificationsScreen(showScaffold: false),
-    ProfilePlaceholderScreen(),
+  List<Widget> get _tabs => [
+    HomeScreen(
+      onOpenCart: () => setState(() => _index = 1),
+    ),
+    const CartPlaceholderScreen(),
+    const MessagesScreen(embeddedInShell: true),
+    const NotificationsScreen(showScaffold: false),
+    const ProfilePlaceholderScreen(),
   ];
 
   @override
