@@ -440,8 +440,12 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
         children: [
           Expanded(
             child: OutlinedButton(
-              onPressed: () {
-                ref.read(cartProvider.notifier).addItem(item, quantity: _quantity);
+              onPressed: () async {
+                final success = await ref
+                    .read(cartProvider.notifier)
+                    .addItem(item, quantity: _quantity);
+                if (!context.mounted) return;
+                if (!success) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text('${item.name} added to cart.')),
                 );
@@ -469,6 +473,11 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
               onPressed: () => Navigator.pushNamed(
                 context,
                 PaymentSubmissionScreen.routeName,
+                arguments: PaymentSubmissionArgs.singleItem(
+                  item: item,
+                  quantity: _quantity,
+                  size: _sizes[_selectedSize],
+                ),
               ),
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.gold,

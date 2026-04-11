@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -24,6 +26,7 @@ class LoginScreen extends ConsumerStatefulWidget {
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   late AuthTab _tab;
   int _registerStep = 1;
+  StreamSubscription<AuthState>? _authSubscription;
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _usernameController = TextEditingController();
@@ -38,6 +41,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   String? _streetAddressError;
   String? _formError;
   bool _loading = false;
+  bool _navigatedAfterAuth = false;
   String? _selectedMunicipalityName;
   String? _selectedBarangay;
 
@@ -45,10 +49,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   void initState() {
     super.initState();
     _tab = widget.initialTab;
+    _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((
+      data,
+    ) {
+      if (data.event != AuthChangeEvent.signedIn || !mounted || _navigatedAfterAuth) {
+        return;
+      }
+      _navigatedAfterAuth = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      });
+    });
   }
 
   @override
   void dispose() {
+    _authSubscription?.cancel();
     _emailController.dispose();
     _passwordController.dispose();
     _usernameController.dispose();
@@ -157,6 +174,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           password: _passwordController.text,
         );
         if (!mounted) return;
+        _navigatedAfterAuth = true;
         Navigator.of(context).popUntil((route) => route.isFirst);
       } else {
         final res = await repo.signUpWithEmail(
@@ -191,6 +209,34 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (mounted) {
         setState(() => _formError = e.toString());
       }
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<void> _submitGoogleSignIn() async {
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _clearFieldErrors();
+      _loading = true;
+    });
+
+    try {
+      final launched = await ref.read(authRepositoryProvider).signInWithGoogle();
+      if (!mounted) return;
+      if (!launched) {
+        setState(() {
+          _formError = 'Could not open Google sign-in. Please try again.';
+        });
+      }
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      setState(() => _formError = e.message);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _formError = e.toString());
     } finally {
       if (mounted) {
         setState(() => _loading = false);
@@ -454,15 +500,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         const SizedBox(height: 12),
         _GoogleOnlyButton(
           enabled: !_loading,
-          onPressed: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Google sign-in is not configured in this mobile app yet.',
-                ),
-              ),
-            );
-          },
+          onPressed: _submitGoogleSignIn,
         ),
         const SizedBox(height: 6),
       ],

@@ -1,58 +1,366 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:xillafit_flutter/features/messages/data/messages_repository.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
 import 'package:xillafit_flutter/widgets/common/app_card.dart';
 
-/// Placeholder for Messages / Chat — UI only, no backend.
-class MessagesScreen extends StatelessWidget {
+class MessagesScreen extends ConsumerStatefulWidget {
   static const routeName = '/messages';
 
   const MessagesScreen({super.key, this.embeddedInShell = false});
 
-  /// When true, content is shown inside [MainShell] without extra scaffold chrome.
   final bool embeddedInShell;
 
   @override
+  ConsumerState<MessagesScreen> createState() => _MessagesScreenState();
+}
+
+class _MessagesScreenState extends ConsumerState<MessagesScreen> {
+  final _controller = TextEditingController();
+  final _scrollController = ScrollController();
+
+  List<SupportMessage> _messages = const [];
+  List<SupportProfile> _supportProfiles = const [];
+  bool _loading = true;
+  bool _sending = false;
+  String? _error;
+  RealtimeChannel? _channel;
+
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() async {
+      await _load();
+      _subscribe();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scrollController.dispose();
+    final channel = _channel;
+    if (channel != null) {
+      Supabase.instance.client.removeChannel(channel);
+    }
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final repo = ref.read(messagesRepositoryProvider);
+      final profiles = await repo.fetchActiveSupportProfiles();
+      final messages = await repo.fetchMessages();
+      if (!mounted) return;
+
+      setState(() {
+        _supportProfiles = profiles;
+        _messages = messages;
+        _loading = false;
+      });
+
+      await _markReadForCurrentThread();
+      _scrollToBottom();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = error.toString();
+      });
+    }
+  }
+
+  void _subscribe() {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) return;
+
+    final channel = Supabase.instance.client
+        .channel('client-messages-$userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'messages',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'receiver_profile_id',
+            value: userId,
+          ),
+          callback: (payload) async {
+            await _load();
+          },
+        )
+        .subscribe();
+
+    _channel = channel;
+  }
+
+  SupportProfile? get _defaultRecipient {
+    if (_supportProfiles.isEmpty) return null;
+    return _supportProfiles.first;
+  }
+
+  String? get _currentUserId => Supabase.instance.client.auth.currentUser?.id;
+
+  String? get _replyTargetId {
+    final userId = _currentUserId;
+    if (userId == null) return _defaultRecipient?.id;
+
+    for (final message in _messages.reversed) {
+      if (message.senderProfileId != userId &&
+          _supportProfiles.any((profile) => profile.id == message.senderProfileId)) {
+        return message.senderProfileId;
+      }
+    }
+    return _defaultRecipient?.id;
+  }
+
+  Future<void> _markReadForCurrentThread() async {
+    final userId = _currentUserId;
+    if (userId == null) return;
+    final senderId = _replyTargetId;
+    if (senderId == null) return;
+    await ref.read(messagesRepositoryProvider).markConversationRead(senderId: senderId);
+  }
+
+  Future<void> _send() async {
+    final receiverId = _replyTargetId;
+    final message = _controller.text.trim();
+    if (receiverId == null || message.isEmpty) return;
+
+    setState(() => _sending = true);
+    try {
+      await ref.read(messagesRepositoryProvider).sendMessage(
+            receiverProfileId: receiverId,
+            message: message,
+          );
+      _controller.clear();
+      await _load();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString())),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _sending = false);
+      }
+    }
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final body = ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+    final userId = _currentUserId;
+
+    final body = Column(
       children: [
-        Text(
-          'MESSAGES',
-          style: AppTextStyles.title.copyWith(fontSize: 24, letterSpacing: 1.0),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Chat with XILLAFIT about your order or design.',
-          style: AppTextStyles.caption.copyWith(fontSize: 12),
-        ),
-        const SizedBox(height: 20),
-        AppCard(
-          padding: const EdgeInsets.all(20),
-          child: Column(
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: Row(
             children: [
-              Icon(Icons.chat_bubble_outline, size: 40, color: AppColors.goldDark),
-              const SizedBox(height: 12),
-              Text(
-                'No conversations yet',
-                style: AppTextStyles.body.copyWith(fontWeight: FontWeight.w700),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Messages',
+                      style: AppTextStyles.heading.copyWith(fontSize: 24),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Chat with XILLAFIT support about your order or design.',
+                      style: AppTextStyles.caption.copyWith(fontSize: 12),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 6),
-              Text(
-                'Start a thread from an order or tap support when ordering goes live.',
-                textAlign: TextAlign.center,
-                style: AppTextStyles.caption,
+              IconButton(
+                onPressed: _load,
+                icon: const Icon(Icons.refresh_rounded),
               ),
             ],
+          ),
+        ),
+        Expanded(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+              : _error != null
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          _error!,
+                          textAlign: TextAlign.center,
+                          style: AppTextStyles.body,
+                        ),
+                      ),
+                    )
+                  : _messages.isEmpty
+                      ? ListView(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                          children: [
+                            AppCard(
+                              padding: const EdgeInsets.all(20),
+                              child: Column(
+                                children: [
+                                  Icon(Icons.chat_bubble_outline, size: 40, color: AppColors.goldDark),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'No conversations yet',
+                                    style: AppTextStyles.body.copyWith(fontWeight: FontWeight.w700),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Send a message and our team will respond shortly.',
+                                    textAlign: TextAlign.center,
+                                    style: AppTextStyles.caption,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        )
+                      : ListView.builder(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                          itemCount: _messages.length,
+                          itemBuilder: (context, index) {
+                            final message = _messages[index];
+                            final mine = message.senderProfileId == userId;
+                            return Align(
+                              alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+                              child: Container(
+                                constraints: const BoxConstraints(maxWidth: 280),
+                                margin: const EdgeInsets.only(bottom: 10),
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: mine ? AppColors.gold : Colors.white,
+                                  borderRadius: BorderRadius.only(
+                                    topLeft: const Radius.circular(18),
+                                    topRight: const Radius.circular(18),
+                                    bottomLeft: Radius.circular(mine ? 18 : 6),
+                                    bottomRight: Radius.circular(mine ? 6 : 18),
+                                  ),
+                                  border: Border.all(
+                                    color: mine ? AppColors.gold : AppColors.border,
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      message.messageContent,
+                                      style: AppTextStyles.body.copyWith(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      _formatTime(message.sentAt),
+                                      style: AppTextStyles.caption.copyWith(fontSize: 10),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+        ),
+        SafeArea(
+          top: false,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            decoration: const BoxDecoration(
+              color: AppColors.surface,
+              border: Border(top: BorderSide(color: AppColors.border)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    minLines: 1,
+                    maxLines: 4,
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: (_) => _sending ? null : _send(),
+                    decoration: InputDecoration(
+                      hintText: 'Type your message...',
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: const BorderSide(color: AppColors.border),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: const BorderSide(color: AppColors.border),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: const BorderSide(color: AppColors.gold),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                FilledButton(
+                  onPressed: _sending ? null : _send,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.gold,
+                    foregroundColor: AppColors.text,
+                    minimumSize: const Size(52, 52),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                  ),
+                  child: _sending
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.send_rounded),
+                ),
+              ],
+            ),
           ),
         ),
       ],
     );
 
-    if (embeddedInShell) return body;
+    if (widget.embeddedInShell) return body;
 
     return Scaffold(
       backgroundColor: AppColors.surface,
-      body: body,
+      body: SafeArea(child: body),
     );
   }
+}
+
+String _formatTime(DateTime? value) {
+  if (value == null) return '-';
+  final hour = value.hour == 0 ? 12 : (value.hour > 12 ? value.hour - 12 : value.hour);
+  final minute = value.minute.toString().padLeft(2, '0');
+  final suffix = value.hour >= 12 ? 'PM' : 'AM';
+  return '$hour:$minute $suffix';
 }

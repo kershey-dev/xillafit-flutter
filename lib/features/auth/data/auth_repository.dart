@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:xillafit_flutter/core/config/app_links.dart';
 
 /// Supabase Auth only — no REST proxy. Profile rows are created by DB triggers on signup.
 class AuthRepository {
@@ -67,5 +68,16 @@ class AuthRepository {
   Future<void> signOut() async {
     debugPrint('[AUTH] signOut()');
     await _client.auth.signOut();
+  }
+
+  Future<bool> signInWithGoogle() async {
+    debugPrint('[AUTH] signInWithGoogle() launch');
+    final launched = await _client.auth.signInWithOAuth(
+      OAuthProvider.google,
+      redirectTo: kIsWeb ? null : AppLinks.googleAuthRedirectUrl,
+      authScreenLaunchMode: LaunchMode.externalApplication,
+    );
+    debugPrint('[AUTH] signInWithGoogle() launched=$launched');
+    return launched;
   }
 }

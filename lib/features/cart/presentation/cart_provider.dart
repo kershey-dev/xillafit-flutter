@@ -1,81 +1,159 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:xillafit_flutter/features/cart/data/cart_repository.dart';
 import 'package:xillafit_flutter/features/catalog/data/clothing_item_model.dart';
+import 'package:xillafit_flutter/features/auth/presentation/auth_providers.dart';
 
-class CartLineItem {
-  const CartLineItem({
-    required this.item,
-    required this.quantity,
+class CartState {
+  const CartState({
+    this.items = const [],
+    this.isLoading = false,
+    this.error,
   });
 
-  final ClothingItemModel item;
-  final int quantity;
+  final List<CartLineItem> items;
+  final bool isLoading;
+  final String? error;
 
-  double get lineTotal => (item.basePrice ?? 0) * quantity;
-
-  CartLineItem copyWith({
-    ClothingItemModel? item,
-    int? quantity,
+  CartState copyWith({
+    List<CartLineItem>? items,
+    bool? isLoading,
+    String? error,
+    bool clearError = false,
   }) {
-    return CartLineItem(
-      item: item ?? this.item,
-      quantity: quantity ?? this.quantity,
+    return CartState(
+      items: items ?? this.items,
+      isLoading: isLoading ?? this.isLoading,
+      error: clearError ? null : (error ?? this.error),
     );
   }
 }
 
-class CartNotifier extends Notifier<List<CartLineItem>> {
+class CartNotifier extends Notifier<CartState> {
+  bool _bootstrapped = false;
+
   @override
-  List<CartLineItem> build() => const [];
+  CartState build() {
+    ref.listen(authSessionProvider, (previous, next) {
+      final previousUserId = previous?.asData?.value?.user.id;
+      final nextSession = next.asData?.value;
+      final nextUserId = nextSession?.user.id;
 
-  void addItem(ClothingItemModel item, {int quantity = 1}) {
-    final index = state.indexWhere((line) => line.item.id == item.id);
-    if (index == -1) {
-      state = [...state, CartLineItem(item: item, quantity: quantity)];
-      return;
+      if (nextUserId == null) {
+        state = const CartState();
+        return;
+      }
+
+      if (previousUserId != nextUserId) {
+        Future.microtask(refreshCart);
+      }
+    });
+
+    final session = ref.read(cartSupabaseClientProvider).auth.currentSession;
+    if (!_bootstrapped && session != null) {
+      _bootstrapped = true;
+      Future.microtask(refreshCart);
     }
 
-    final updated = [...state];
-    final line = updated[index];
-    updated[index] = line.copyWith(quantity: line.quantity + quantity);
-    state = updated;
+    return const CartState();
   }
 
-  void updateQuantity(String itemId, int quantity) {
+  Future<void> refreshCart() async {
+    await _runLoading(() async {
+      final items = await ref.read(cartRepositoryProvider).fetchCart();
+      state = state.copyWith(
+        items: items,
+        isLoading: false,
+        clearError: true,
+      );
+    });
+  }
+
+  Future<bool> addItem(ClothingItemModel item, {int quantity = 1}) async {
+    CartLineItem? existing;
+    for (final line in state.items) {
+      if (line.item.id == item.id) {
+        existing = line;
+        break;
+      }
+    }
+    final nextQuantity = (existing?.quantity ?? 0) + quantity;
+
+    return _runLoading(() async {
+      final items = await ref.read(cartRepositoryProvider).addItem(
+            productId: item.id,
+            quantity: nextQuantity,
+          );
+      state = state.copyWith(
+        items: items,
+        isLoading: false,
+        clearError: true,
+      );
+    });
+  }
+
+  Future<bool> updateQuantity(String itemId, int quantity) async {
     if (quantity <= 0) {
-      removeItem(itemId);
-      return;
+      return removeItem(itemId);
     }
 
-    state = [
-      for (final line in state)
-        if (line.item.id == itemId)
-          line.copyWith(quantity: quantity)
-        else
-          line,
-    ];
+    return _runLoading(() async {
+      final items = await ref.read(cartRepositoryProvider).addItem(
+            productId: itemId,
+            quantity: quantity,
+          );
+      state = state.copyWith(
+        items: items,
+        isLoading: false,
+        clearError: true,
+      );
+    });
   }
 
-  void removeItem(String itemId) {
-    state = state.where((line) => line.item.id != itemId).toList();
+  Future<bool> removeItem(String itemId) async {
+    return _runLoading(() async {
+      final items = await ref.read(cartRepositoryProvider).removeItem(itemId);
+      state = state.copyWith(
+        items: items,
+        isLoading: false,
+        clearError: true,
+      );
+    });
   }
 
-  void clear() {
-    state = const [];
+  Future<bool> clear() async {
+    return _runLoading(() async {
+      await ref.read(cartRepositoryProvider).clear();
+      state = const CartState();
+    });
+  }
+
+  Future<bool> _runLoading(Future<void> Function() action) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      await action();
+      return true;
+    } catch (error) {
+      state = state.copyWith(
+        isLoading: false,
+        error: error.toString(),
+      );
+      return false;
+    }
   }
 }
 
 final cartProvider =
-    NotifierProvider<CartNotifier, List<CartLineItem>>(CartNotifier.new);
+    NotifierProvider<CartNotifier, CartState>(CartNotifier.new);
 
 final cartSubtotalProvider = Provider<double>((ref) {
-  return ref.watch(cartProvider).fold<double>(
+  return ref.watch(cartProvider).items.fold<double>(
         0,
         (sum, line) => sum + line.lineTotal,
       );
 });
 
 final cartItemCountProvider = Provider<int>((ref) {
-  return ref.watch(cartProvider).fold<int>(
+  return ref.watch(cartProvider).items.fold<int>(
         0,
         (sum, line) => sum + line.quantity,
       );

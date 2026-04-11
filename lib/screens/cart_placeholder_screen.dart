@@ -12,8 +12,23 @@ class CartPlaceholderScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final lines = ref.watch(cartProvider);
+    final cartState = ref.watch(cartProvider);
+    final lines = cartState.items;
     final subtotal = ref.watch(cartSubtotalProvider);
+
+    ref.listen(cartProvider.select((value) => value.error), (previous, next) {
+      if (next != null && next != previous) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(next)),
+        );
+      }
+    });
+
+    if (cartState.isLoading && lines.isEmpty) {
+      return const Center(
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    }
 
     if (lines.isEmpty) {
       return Center(
@@ -139,11 +154,13 @@ class CartPlaceholderScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 12),
                 PrimaryButton(
-                  text: 'Proceed to Checkout',
-                  onPressed: () => Navigator.pushNamed(
-                    context,
-                    PaymentSubmissionScreen.routeName,
-                  ),
+                  text: cartState.isLoading ? 'Updating cart...' : 'Proceed to Checkout',
+                  onPressed: cartState.isLoading
+                      ? null
+                      : () => Navigator.pushNamed(
+                            context,
+                            PaymentSubmissionScreen.routeName,
+                          ),
                 ),
               ],
             ),
