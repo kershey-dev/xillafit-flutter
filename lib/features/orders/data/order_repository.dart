@@ -35,7 +35,9 @@ class OrderSummary {
       id: map['id']?.toString() ?? '',
       referenceNo: map['order_reference_no']?.toString() ?? '',
       orderStatus: map['order_status']?.toString() ?? 'pending',
-      paymentStatus: map['payment_status']?.toString() ?? 'pending',
+      paymentStatus: map['payment_type']?.toString() ??
+          map['payment_status']?.toString() ??
+          'pending',
       grandTotal: _asDouble(map['grand_total']),
       deliveryOption: map['delivery_option']?.toString(),
       deliveryFee: _asNullableDouble(map['delivery_fee']),
@@ -162,8 +164,16 @@ class OrderRepository {
     final data = await _api.post(
       '/payments/balance/$orderId',
       body: {
-        'successUrl': '${AppLinks.siteUrl}/tracking?success=true',
-        'cancelUrl': '${AppLinks.siteUrl}/tracking?success=false',
+        'successUrl': AppLinks.paymentBridgeUrl(
+          success: true,
+          flow: 'balance',
+          orderId: orderId,
+        ),
+        'cancelUrl': AppLinks.paymentBridgeUrl(
+          success: false,
+          flow: 'balance',
+          orderId: orderId,
+        ),
       },
     );
     return CheckoutSessionResult.fromMap(Map<String, dynamic>.from(data as Map));

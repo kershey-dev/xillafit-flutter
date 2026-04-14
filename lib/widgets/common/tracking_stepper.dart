@@ -18,67 +18,111 @@ class TrackingStepData {
 
 class TrackingStepper extends StatelessWidget {
   final List<TrackingStepData> steps;
+
   const TrackingStepper({super.key, required this.steps});
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: List.generate(steps.length, (index) {
-        final step = steps[index];
-        final isLast = index == steps.length - 1;
-        return Expanded(
-          child: Column(
-            children: [
-              Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 380;
+        final circleSize = compact ? 18.0 : 22.0;
+        final labelFontSize = compact ? 8.0 : 9.0;
+        final dateFontSize = compact ? 7.0 : 8.0;
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: List.generate(steps.length, (index) {
+            final step = steps[index];
+            final isLast = index == steps.length - 1;
+            final circleColor = step.done
+                ? AppColors.success
+                : step.active
+                    ? AppColors.gold
+                    : Colors.white;
+            final borderColor =
+                (step.done || step.active) ? Colors.transparent : AppColors.border;
+
+            return Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Expanded(
-                    child: Column(
+                  SizedBox(
+                    height: circleSize,
+                    child: Row(
                       children: [
-                        Container(
-                          width: 22,
-                          height: 22,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: step.done
-                                ? AppColors.success
-                                : step.active
-                                    ? AppColors.gold
-                                    : Colors.white,
-                            border: Border.all(
-                              color: (step.done || step.active) ? Colors.transparent : AppColors.border,
-                              width: 2,
-                            ),
-                          ),
-                          child: Center(
-                            child: Text(
-                              step.done ? '✓' : '',
-                              style: AppTextStyles.caption.copyWith(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Container(
+                              width: circleSize,
+                              height: circleSize,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: circleColor,
+                                border: Border.all(
+                                  color: borderColor,
+                                  width: 2,
+                                ),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  step.done ? '✓' : '',
+                                  style: AppTextStyles.caption.copyWith(
+                                    color: Colors.white,
+                                    fontSize: compact ? 9 : 10,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
                         ),
+                        if (!isLast)
+                          Expanded(
+                            child: Container(
+                              height: 1.5,
+                              margin: EdgeInsets.only(
+                                left: compact ? 4 : 6,
+                                right: compact ? 4 : 6,
+                              ),
+                              color: step.done ? AppColors.success : AppColors.border,
+                            ),
+                          ),
                       ],
                     ),
                   ),
-                  if (!isLast)
-                    Container(
-                      height: 1.5,
-                      width: 30,
-                      color: step.done ? AppColors.success : AppColors.border,
+                  const SizedBox(height: 6),
+                  Text(
+                    step.label,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.caption.copyWith(
+                      fontSize: labelFontSize,
+                      height: 1.15,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (step.date != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        step.date!,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.caption.copyWith(
+                          fontSize: dateFontSize,
+                        ),
+                      ),
                     ),
                 ],
               ),
-              const SizedBox(height: 5),
-              Text(step.label, textAlign: TextAlign.center, style: AppTextStyles.caption.copyWith(fontSize: 9, fontWeight: FontWeight.w500)),
-              if (step.date != null)
-                Text(step.date!, style: AppTextStyles.caption.copyWith(fontSize: 8)),
-            ],
-          ),
+            );
+          }),
         );
-      }),
+      },
     );
   }
 }

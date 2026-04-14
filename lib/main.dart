@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:xillafit_flutter/app_theme.dart';
+import 'package:xillafit_flutter/core/payments/payment_return_handler.dart';
 import 'package:xillafit_flutter/core/config/supabase_env.dart';
 import 'package:xillafit_flutter/features/auth/presentation/auth_gate.dart';
 import 'package:xillafit_flutter/features/auth/presentation/register_screen.dart';
@@ -42,12 +43,38 @@ Future<void> main() async {
   );
 }
 
-class XillaApp extends StatelessWidget {
+class XillaApp extends StatefulWidget {
   const XillaApp({super.key});
+
+  @override
+  State<XillaApp> createState() => _XillaAppState();
+}
+
+class _XillaAppState extends State<XillaApp> {
+  final _navigatorKey = GlobalKey<NavigatorState>();
+  PaymentReturnHandler? _paymentReturnHandler;
+
+  @override
+  void initState() {
+    super.initState();
+    _paymentReturnHandler = PaymentReturnHandler(
+      navigatorKey: _navigatorKey,
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _paymentReturnHandler?.initialize();
+    });
+  }
+
+  @override
+  void dispose() {
+    _paymentReturnHandler?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       debugShowCheckedModeBanner: false,
       title: 'Xilla',
       theme: AppTheme.light(),

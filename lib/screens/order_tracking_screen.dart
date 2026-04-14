@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:xillafit_flutter/core/payments/payment_session_store.dart';
 import 'package:xillafit_flutter/features/orders/data/order_repository.dart';
+import 'package:xillafit_flutter/screens/main_shell.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
 import 'package:xillafit_flutter/widgets/common/app_card.dart';
 import 'package:xillafit_flutter/widgets/common/progress_bar_x.dart';
@@ -37,6 +41,19 @@ class OrderTrackingScreen extends ConsumerWidget {
         backgroundColor: AppColors.surface,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: () {
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+              return;
+            }
+            Navigator.of(context).pushNamedAndRemoveUntil(
+              MainShell.routeName,
+              (_) => false,
+            );
+          },
+        ),
         title: Text(
           'Order Tracking',
           style: AppTextStyles.heading.copyWith(fontSize: 22),
@@ -70,7 +87,34 @@ class _OrderTrackingBody extends ConsumerStatefulWidget {
 }
 
 class _OrderTrackingBodyState extends ConsumerState<_OrderTrackingBody> {
+  Timer? _refreshTimer;
   bool _openingBalance = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(_lifecycleObserver);
+    _refreshTimer = Timer.periodic(
+      const Duration(seconds: 8),
+      (_) => _refreshOrderSilently(),
+    );
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(_lifecycleObserver);
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  late final WidgetsBindingObserver _lifecycleObserver =
+      _OrderTrackingLifecycleObserver(onResume: _refreshOrderSilently);
+
+  void _refreshOrderSilently() {
+    if (!mounted) return;
+    ref.invalidate(orderDetailProvider(widget.order.summary.id));
+    ref.invalidate(orderHistoryProvider);
+  }
 
   Future<void> _payRemainingBalance() async {
     setState(() => _openingBalance = true);
@@ -78,11 +122,29 @@ class _OrderTrackingBodyState extends ConsumerState<_OrderTrackingBody> {
       final result = await ref
           .read(orderRepositoryProvider)
           .createBalanceCheckoutSession(widget.order.summary.id);
-      await launchUrl(
+      if ((result.sessionId ?? '').trim().isNotEmpty) {
+        await PaymentSessionStore.save(
+          PendingPaymentSession(
+            sessionId: result.sessionId!,
+            flow: 'balance',
+            orderId: widget.order.summary.id,
+            referenceId: widget.order.summary.referenceNo,
+          ),
+        );
+      }
+      final launched = await launchUrl(
         Uri.parse(result.checkoutUrl),
         mode: LaunchMode.externalApplication,
       );
+      if (!launched) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open the payment page.')),
+        );
+        await PaymentSessionStore.clear();
+      }
     } catch (error) {
+      await PaymentSessionStore.clear();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(error.toString())),
@@ -103,7 +165,8 @@ class _OrderTrackingBodyState extends ConsumerState<_OrderTrackingBody> {
 
     return RefreshIndicator(
       onRefresh: () async {
-        await ref.refresh(orderDetailProvider(summary.id).future);
+        _refreshOrderSilently();
+        await ref.read(orderDetailProvider(summary.id).future);
       },
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
@@ -292,6 +355,19 @@ class _OrderTrackingBodyState extends ConsumerState<_OrderTrackingBody> {
   }
 }
 
+class _OrderTrackingLifecycleObserver with WidgetsBindingObserver {
+  _OrderTrackingLifecycleObserver({required this.onResume});
+
+  final VoidCallback onResume;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      onResume();
+    }
+  }
+}
+
 class _TopInfo extends StatelessWidget {
   const _TopInfo({
     required this.label,
@@ -339,7 +415,7 @@ class _OrderItemTile extends StatelessWidget {
               ? Image.network(
                   item.previewImageUrl!,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const Icon(Icons.checkroom_rounded),
+                  errorBuilder: (_, _, _) => const Icon(Icons.checkroom_rounded),
                 )
               : const Icon(Icons.checkroom_rounded),
         ),
@@ -424,10 +500,10 @@ class _TrackingEventTile extends StatelessWidget {
 const _trackingSteps = <String>[
   'Order Placed',
   'Confirmed',
-  'Processing',
-  'In Production',
-  'Quality Check',
-  'Shipped',
+  'Preparation',
+  'Production',
+  'Ready for Pickup',
+  'Out for Delivery',
   'Delivered',
 ];
 
@@ -477,6 +553,7 @@ String _trackingPaymentLabel(String status) {
   switch (status) {
     case 'partially_paid':
       return 'Half paid';
+    case 'fully_paid':
     case 'paid':
       return 'Paid';
     case 'processing':

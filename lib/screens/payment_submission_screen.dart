@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:xillafit_flutter/core/config/app_links.dart';
+import 'package:xillafit_flutter/core/payments/payment_session_store.dart';
 import 'package:xillafit_flutter/features/auth/data/bulacan_locations.dart';
 import 'package:xillafit_flutter/features/auth/presentation/auth_providers.dart';
-import 'package:xillafit_flutter/features/cart/data/cart_repository.dart';
 import 'package:xillafit_flutter/features/cart/presentation/cart_provider.dart';
 import 'package:xillafit_flutter/features/catalog/data/clothing_item_model.dart';
 import 'package:xillafit_flutter/features/checkout/data/checkout_repository.dart';
@@ -115,14 +115,12 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
     final p = profile;
     if (p == null) return;
     _streetController.text = p.streetAddress?.toString() ?? '';
-    _selectedMunicipality = p.municipality?.toString() ?? '';
-    _selectedBarangay = p.barangay?.toString() ?? '';
-    _zipCode = p.zipCode?.toString() ?? '';
+    final municipality = _municipalityByName(p.municipality?.toString() ?? '');
+    final barangay = p.barangay?.toString() ?? '';
 
-    if (_selectedMunicipality.isNotEmpty && _zipCode.isEmpty) {
-      final municipality = _municipalityByName(_selectedMunicipality);
-      _zipCode = municipality?.zipCode ?? '';
-    }
+    _selectedMunicipality = municipality?.name ?? '';
+    _selectedBarangay = municipality?.barangays.contains(barangay) == true ? barangay : '';
+    _zipCode = municipality?.zipCode ?? (p.zipCode?.toString() ?? '');
   }
 
   BulacanMunicipality? _municipalityByName(String value) {
@@ -209,8 +207,16 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
             referenceId: referenceId,
             items: items,
             profileId: user.id,
-            successUrl: '${AppLinks.siteUrl}/tracking?success=true',
-            cancelUrl: '${AppLinks.siteUrl}/checkout',
+            successUrl: AppLinks.paymentBridgeUrl(
+              success: true,
+              flow: 'checkout',
+              referenceId: referenceId,
+            ),
+            cancelUrl: AppLinks.paymentBridgeUrl(
+              success: false,
+              flow: 'checkout',
+              referenceId: referenceId,
+            ),
             deliveryOption: _deliveryOption == _DeliveryOption.delivery ? 'delivery' : 'pickup',
             deliveryAddress: _deliveryOption == _DeliveryOption.delivery
                 ? '${_streetController.text.trim()}, $_selectedBarangay, $_selectedMunicipality, Bulacan $_zipCode'
@@ -224,14 +230,27 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
             streetAddress: checkoutStreet,
           );
 
+      if ((result.sessionId ?? '').trim().isNotEmpty) {
+        await PaymentSessionStore.save(
+          PendingPaymentSession(
+            sessionId: result.sessionId!,
+            flow: 'checkout',
+            referenceId: referenceId,
+          ),
+        );
+      }
+
       final uri = Uri.parse(result.checkoutUrl);
       final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!launched && mounted) {
+      if (!launched) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Could not open the payment page.')),
         );
+        await PaymentSessionStore.clear();
       }
     } catch (error) {
+      await PaymentSessionStore.clear();
       if (!mounted) return;
       setState(() => _error = error.toString());
       ScaffoldMessenger.of(context).showSnackBar(
@@ -262,6 +281,9 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
     final amountDueNow = _paymentType == _PaymentType.full ? grandTotal : grandTotal * 0.5;
     final remainingBalance = grandTotal - amountDueNow;
     final municipality = _municipalityByName(_selectedMunicipality);
+    final municipalityValue = municipality?.name;
+    final barangayValue =
+        municipality?.barangays.contains(_selectedBarangay) == true ? _selectedBarangay : null;
 
     return Scaffold(
       backgroundColor: AppColors.surface,
@@ -372,7 +394,7 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
                               const SizedBox(height: 12),
                               _FieldLabel('Municipality'),
                               DropdownButtonFormField<String>(
-                                value: _selectedMunicipality.isEmpty ? null : _selectedMunicipality,
+                                initialValue: municipalityValue,
                                 items: [
                                   for (final item in bulacanMunicipalities)
                                     DropdownMenuItem(
@@ -393,7 +415,7 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
                               const SizedBox(height: 12),
                               _FieldLabel('Barangay'),
                               DropdownButtonFormField<String>(
-                                value: _selectedBarangay.isEmpty ? null : _selectedBarangay,
+                                initialValue: barangayValue,
                                 items: [
                                   for (final barangay in municipality?.barangays ?? const <String>[])
                                     DropdownMenuItem(
@@ -704,7 +726,7 @@ class _CheckoutItemTile extends StatelessWidget {
               ? Image.network(
                   item.image!,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const Icon(Icons.checkroom_rounded),
+                  errorBuilder: (_, _, _) => const Icon(Icons.checkroom_rounded),
                 )
               : const Icon(Icons.checkroom_rounded),
         ),

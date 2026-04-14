@@ -27,5 +27,45 @@ class AppLinks {
   static const googleAuthRedirectUrl =
       '$authRedirectScheme://$authRedirectHost';
 
+  static String paymentCallbackUrl({
+    required bool success,
+    String? flow,
+    String? orderId,
+    String? referenceId,
+  }) {
+    final query = <String, String>{
+      'success': success ? 'true' : 'false',
+      if ((flow ?? '').trim().isNotEmpty) 'flow': flow!.trim(),
+      if ((orderId ?? '').trim().isNotEmpty) 'orderId': orderId!.trim(),
+      if ((referenceId ?? '').trim().isNotEmpty)
+        'referenceId': referenceId!.trim(),
+    };
+
+    return Uri(
+      scheme: authRedirectScheme,
+      host: authRedirectHost,
+      path: '/payment',
+      queryParameters: query,
+    ).toString();
+  }
+
+  static String paymentBridgeUrl({
+    required bool success,
+    String? flow,
+    String? orderId,
+    String? referenceId,
+  }) {
+    return Uri.parse(siteUrl).replace(
+      path: '/mobile-payment-callback',
+      queryParameters: <String, String>{
+        'success': success ? 'true' : 'false',
+        if ((flow ?? '').trim().isNotEmpty) 'flow': flow!.trim(),
+        if ((orderId ?? '').trim().isNotEmpty) 'orderId': orderId!.trim(),
+        if ((referenceId ?? '').trim().isNotEmpty)
+          'referenceId': referenceId!.trim(),
+      },
+    ).toString();
+  }
+
   const AppLinks._();
 }

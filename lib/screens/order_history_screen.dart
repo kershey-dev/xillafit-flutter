@@ -40,9 +40,7 @@ class OrderHistoryScreen extends ConsumerWidget {
         data: (orders) {
           final totalSpent = orders.fold<double>(0, (sum, item) => sum + item.grandTotal);
           return RefreshIndicator(
-            onRefresh: () async {
-              await ref.refresh(orderHistoryProvider.future);
-            },
+            onRefresh: () => ref.refresh(orderHistoryProvider.future),
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
               children: [
@@ -287,6 +285,7 @@ String _labelForStatus(String value) {
 
 String _labelForPayment(String value) {
   switch (value) {
+    case 'fully_paid':
     case 'paid':
       return 'Paid';
     case 'partially_paid':
