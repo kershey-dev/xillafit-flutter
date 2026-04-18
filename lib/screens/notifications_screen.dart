@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:xillafit_flutter/features/notifications/data/notifications_repository.dart';
+import 'package:xillafit_flutter/screens/order_tracking_screen.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
 import 'package:xillafit_flutter/widgets/common/app_card.dart';
 
@@ -91,9 +92,21 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     await _load();
   }
 
-  Future<void> _markRead(String id) async {
-    await ref.read(notificationsRepositoryProvider).markAsRead(id);
+  Future<void> _openNotification(AppNotificationItem item) async {
+    if (!item.isRead) {
+      await ref.read(notificationsRepositoryProvider).markAsRead(item.id);
+    }
     await _load();
+
+    if (!mounted) return;
+
+    final orderId = item.orderId?.trim();
+    if ((orderId ?? '').isNotEmpty) {
+      Navigator.of(context).pushNamed(
+        OrderTrackingScreen.routeName,
+        arguments: OrderTrackingArgs(orderId: orderId!),
+      );
+    }
   }
 
   @override
@@ -159,7 +172,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             for (final item in _items) ...[
               _NotifTile(
                 item: item,
-                onTap: () => _markRead(item.id),
+                onTap: () => _openNotification(item),
               ),
               const SizedBox(height: 8),
             ],

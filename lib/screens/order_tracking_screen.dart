@@ -2,10 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:xillafit_flutter/core/payments/payment_session_store.dart';
 import 'package:xillafit_flutter/features/orders/data/order_repository.dart';
 import 'package:xillafit_flutter/screens/main_shell.dart';
+import 'package:xillafit_flutter/screens/mobile_webview_screen.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
 import 'package:xillafit_flutter/widgets/common/app_card.dart';
 import 'package:xillafit_flutter/widgets/common/progress_bar_x.dart';
@@ -89,11 +90,14 @@ class _OrderTrackingBody extends ConsumerStatefulWidget {
 class _OrderTrackingBodyState extends ConsumerState<_OrderTrackingBody> {
   Timer? _refreshTimer;
   bool _openingBalance = false;
+  bool _waitingForBalanceReturn = false;
+  RealtimeChannel? _realtimeChannel;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(_lifecycleObserver);
+    _subscribeToOrderUpdates();
     _refreshTimer = Timer.periodic(
       const Duration(seconds: 8),
       (_) => _refreshOrderSilently(),
@@ -104,6 +108,10 @@ class _OrderTrackingBodyState extends ConsumerState<_OrderTrackingBody> {
   void dispose() {
     WidgetsBinding.instance.removeObserver(_lifecycleObserver);
     _refreshTimer?.cancel();
+    final channel = _realtimeChannel;
+    if (channel != null) {
+      Supabase.instance.client.removeChannel(channel);
+    }
     super.dispose();
   }
 
@@ -114,6 +122,38 @@ class _OrderTrackingBodyState extends ConsumerState<_OrderTrackingBody> {
     if (!mounted) return;
     ref.invalidate(orderDetailProvider(widget.order.summary.id));
     ref.invalidate(orderHistoryProvider);
+  }
+
+  void _subscribeToOrderUpdates() {
+    final orderId = widget.order.summary.id;
+    final channel = Supabase.instance.client.channel('client-order-$orderId');
+
+    channel
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'orders',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'id',
+            value: orderId,
+          ),
+          callback: (_) => _refreshOrderSilently(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'order_tracking',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'order_id',
+            value: orderId,
+          ),
+          callback: (_) => _refreshOrderSilently(),
+        )
+        .subscribe();
+
+    _realtimeChannel = channel;
   }
 
   Future<void> _payRemainingBalance() async {
@@ -132,17 +172,17 @@ class _OrderTrackingBodyState extends ConsumerState<_OrderTrackingBody> {
           ),
         );
       }
-      final launched = await launchUrl(
-        Uri.parse(result.checkoutUrl),
-        mode: LaunchMode.externalApplication,
+      if (!mounted) return;
+      setState(() => _waitingForBalanceReturn = true);
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => MobileWebViewScreen(
+            title: 'Remaining Balance',
+            initialUrl: result.checkoutUrl,
+            mode: MobileWebViewMode.payment,
+          ),
+        ),
       );
-      if (!launched) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open the payment page.')),
-        );
-        await PaymentSessionStore.clear();
-      }
     } catch (error) {
       await PaymentSessionStore.clear();
       if (!mounted) return;
@@ -151,7 +191,10 @@ class _OrderTrackingBodyState extends ConsumerState<_OrderTrackingBody> {
       );
     } finally {
       if (mounted) {
-        setState(() => _openingBalance = false);
+        setState(() {
+          _openingBalance = false;
+          _waitingForBalanceReturn = false;
+        });
       }
     }
   }
@@ -260,7 +303,9 @@ class _OrderTrackingBodyState extends ConsumerState<_OrderTrackingBody> {
                         SizedBox(
                           width: double.infinity,
                           child: FilledButton(
-                            onPressed: _openingBalance ? null : _payRemainingBalance,
+                            onPressed: _openingBalance || _waitingForBalanceReturn
+                                ? null
+                                : _payRemainingBalance,
                             style: FilledButton.styleFrom(
                               backgroundColor: AppColors.gold,
                               foregroundColor: AppColors.text,
@@ -270,7 +315,11 @@ class _OrderTrackingBodyState extends ConsumerState<_OrderTrackingBody> {
                               ),
                             ),
                             child: Text(
-                              _openingBalance ? 'Opening checkout...' : 'Pay Remaining Balance',
+                              _openingBalance
+                                  ? 'Preparing checkout...'
+                                  : _waitingForBalanceReturn
+                                      ? 'Waiting for payment confirmation...'
+                                      : 'Pay Remaining Balance',
                             ),
                           ),
                         ),

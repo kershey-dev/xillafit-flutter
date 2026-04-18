@@ -5,20 +5,24 @@ import 'package:xillafit_flutter/features/catalog/data/clothing_item_model.dart'
 
 class CartLineItem {
   const CartLineItem({
+    required this.cartId,
     required this.item,
     required this.quantity,
   });
 
+  final String cartId;
   final ClothingItemModel item;
   final int quantity;
 
   double get lineTotal => (item.basePrice ?? 0) * quantity;
 
   CartLineItem copyWith({
+    String? cartId,
     ClothingItemModel? item,
     int? quantity,
   }) {
     return CartLineItem(
+      cartId: cartId ?? this.cartId,
       item: item ?? this.item,
       quantity: quantity ?? this.quantity,
     );
@@ -28,6 +32,7 @@ class CartLineItem {
     final rawPrice = map['price'];
     final category = map['category']?.toString();
     return CartLineItem(
+      cartId: map['cart_id']?.toString() ?? '',
       item: ClothingItemModel(
         id: map['id']?.toString() ?? '',
         categoryId: '',
@@ -86,8 +91,8 @@ class CartRepository {
     return _parseList(data);
   }
 
-  Future<List<CartLineItem>> removeItem(String productId) async {
-    final data = await _api.delete('/cart/$productId');
+  Future<List<CartLineItem>> removeItem(String cartId) async {
+    final data = await _api.delete('/cart/$cartId');
     return _parseList(data);
   }
 

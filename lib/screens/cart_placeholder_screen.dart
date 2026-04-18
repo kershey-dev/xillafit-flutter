@@ -82,7 +82,7 @@ class CartPlaceholderScreen extends ConsumerWidget {
                         ? Image.network(
                             line.item.previewImageUrl!,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
+                            errorBuilder: (_, _, _) =>
                                 const Icon(Icons.checkroom_rounded),
                           )
                         : const Icon(Icons.checkroom_rounded),
@@ -121,7 +121,7 @@ class CartPlaceholderScreen extends ConsumerWidget {
                   ),
                   IconButton(
                     onPressed: () =>
-                        ref.read(cartProvider.notifier).removeItem(line.item.id),
+                        ref.read(cartProvider.notifier).removeItem(line.cartId),
                     icon: const Icon(Icons.close_rounded),
                     color: AppColors.muted,
                   ),

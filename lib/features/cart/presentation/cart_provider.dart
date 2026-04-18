@@ -109,9 +109,9 @@ class CartNotifier extends Notifier<CartState> {
     });
   }
 
-  Future<bool> removeItem(String itemId) async {
+  Future<bool> removeItem(String cartId) async {
     return _runLoading(() async {
-      final items = await ref.read(cartRepositoryProvider).removeItem(itemId);
+      final items = await ref.read(cartRepositoryProvider).removeItem(cartId);
       state = state.copyWith(
         items: items,
         isLoading: false,
