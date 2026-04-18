@@ -1,12 +1,35 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:xillafit_flutter/core/config/app_links.dart';
+import 'package:xillafit_flutter/features/cart/data/cart_repository.dart';
 import 'package:xillafit_flutter/features/catalog/data/clothing_item_model.dart';
 import 'package:xillafit_flutter/features/catalog/presentation/catalog_providers.dart';
 import 'package:xillafit_flutter/features/cart/presentation/cart_provider.dart';
+import 'package:xillafit_flutter/features/checkout/data/checkout_repository.dart';
 import 'package:xillafit_flutter/screens/mobile_webview_screen.dart';
 import 'package:xillafit_flutter/screens/payment_submission_screen.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
+
+final productFabricOptionsProvider = FutureProvider.autoDispose<List<String>>((
+  ref,
+) async {
+  final api = ref.watch(backendApiClientProvider);
+  final data = await api.get('/inventory');
+  final rows = (data as List? ?? const <dynamic>[]);
+  final options = <String>{};
+
+  for (final row in rows.whereType<Map>()) {
+    final materialType = row['material_type']?.toString().trim().toLowerCase();
+    final materialName = row['material_name']?.toString().trim();
+    if (materialType == 'fabric' && (materialName ?? '').isNotEmpty) {
+      options.add(materialName!);
+    }
+  }
+
+  final sorted = options.toList()..sort();
+  return sorted;
+});
 
 class ProductDetailArgs {
   final String? itemId;
@@ -26,10 +49,14 @@ class ProductDetailScreen extends ConsumerStatefulWidget {
 
 class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   int _quantity = 1;
-  int _selectedSize = 1;
+  String? _selectedSize;
+  String? _selectedFabric;
+  String _customName = '';
+  String _customNumber = '';
   bool _expandedDescription = false;
+  bool _isAddingToCart = false;
 
-  static const _sizes = ['S', 'M', 'L', 'XL'];
+  static const _sizes = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'];
 
   @override
   Widget build(BuildContext context) {
@@ -37,6 +64,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
     final detailArgs = args is ProductDetailArgs ? args : null;
     final inlineItem = detailArgs?.item;
     final itemId = detailArgs?.itemId ?? inlineItem?.id;
+    final fabricsAsync = ref.watch(productFabricOptionsProvider);
     final itemAsync = itemId == null
         ? const AsyncData<ClothingItemModel?>(null)
         : ref.watch(clothingItemDetailProvider(itemId));
@@ -45,7 +73,10 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
       backgroundColor: const Color(0xFFFAFAFA),
       bottomNavigationBar: itemAsync.asData?.value == null && inlineItem == null
           ? null
-          : _bottomActionBar((inlineItem ?? itemAsync.asData?.value)!),
+          : _bottomActionBar(
+              (inlineItem ?? itemAsync.asData?.value)!,
+              fabricsAsync.asData?.value ?? const <String>[],
+            ),
       body: itemAsync.when(
         loading: () => const Center(child: CircularProgressIndicator(strokeWidth: 2)),
         error: (error, stack) => Center(
@@ -72,6 +103,9 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
           final sold = _soldCount(item.id);
           final rating = _ratingFor(item.id);
           final safeTop = MediaQuery.paddingOf(context).top;
+          final fabrics = fabricsAsync.asData?.value ?? const <String>[];
+          final isLoadingFabrics = fabricsAsync.isLoading && fabrics.isEmpty;
+          final isJersey = _isJerseyProduct(item);
 
           return CustomScrollView(
             physics: const BouncingScrollPhysics(),
@@ -110,14 +144,6 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                       child: _detailCircleButton(
                         icon: Icons.arrow_back_ios_new_rounded,
                         onTap: () => Navigator.of(context).pop(),
-                      ),
-                    ),
-                    Positioned(
-                      top: safeTop + 12,
-                      right: 18,
-                      child: _detailCircleButton(
-                        icon: Icons.favorite_border_rounded,
-                        onTap: () {},
                       ),
                     ),
                     Positioned(
@@ -243,47 +269,270 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                         ],
                       ),
                       const SizedBox(height: 22),
-                      _optionRow(
-                        title: 'Size',
-                        child: Wrap(
-                          spacing: 8,
-                          children: List.generate(_sizes.length, (index) {
-                            final selected = index == _selectedSize;
+                      _selectorHeader(
+                        title: 'Select Size',
+                        trailing: TextButton(
+                          onPressed: () {
+                            final messenger = ScaffoldMessenger.of(context);
+                            messenger.hideCurrentSnackBar();
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                content: Text('Size chart will be available here soon.'),
+                              ),
+                            );
+                          },
+                          child: Text(
+                            'Size Chart',
+                            style: AppTextStyles.body.copyWith(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF1A3263),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 10,
+                        children: _sizes.map((size) {
+                          final selected = size == _selectedSize;
+                          return GestureDetector(
+                            onTap: () => setState(() => _selectedSize = size),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              width: size.length >= 3 ? 62 : 52,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: selected ? const Color(0xFF111827) : Colors.white,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: selected
+                                      ? const Color(0xFF111827)
+                                      : const Color(0xFFE5E7EB),
+                                  width: 1.5,
+                                ),
+                                boxShadow: selected
+                                    ? const [
+                                        BoxShadow(
+                                          color: Color(0x22000000),
+                                          blurRadius: 16,
+                                          offset: Offset(0, 6),
+                                        ),
+                                      ]
+                                    : null,
+                              ),
+                              alignment: Alignment.center,
+                                child: Text(
+                                  size,
+                                  style: AppTextStyles.body.copyWith(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w900,
+                                    color: selected
+                                        ? Colors.white
+                                        : const Color(0xFF94A3B8),
+                                  ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 18),
+                      _selectorHeader(title: 'Fabric Type'),
+                      if (isLoadingFabrics)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 18),
+                          child: Center(
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      else if (fabrics.isEmpty)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: const Color(0xFFE5E7EB)),
+                          ),
+                          child: Text(
+                            'No specific fabrics defined in inventory.',
+                            style: AppTextStyles.caption.copyWith(
+                              color: AppColors.muted,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        )
+                      else
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 12,
+                          children: fabrics.map((fabric) {
+                            final selected = fabric == _selectedFabric;
                             return GestureDetector(
-                              onTap: () => setState(() => _selectedSize = index),
+                              onTap: () => setState(() => _selectedFabric = fabric),
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 180),
-                                width: 34,
-                                height: 34,
+                                width: MediaQuery.sizeOf(context).width > 420
+                                    ? 176
+                                    : (MediaQuery.sizeOf(context).width - 76) / 2,
+                                constraints: const BoxConstraints(minHeight: 78),
+                                padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
                                 decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
                                   color: selected ? AppColors.gold : Colors.white,
+                                  borderRadius: BorderRadius.circular(20),
                                   border: Border.all(
                                     color: selected
                                         ? AppColors.gold
                                         : const Color(0xFFE5E7EB),
+                                    width: 1.6,
                                   ),
+                                  boxShadow: selected
+                                      ? const [
+                                          BoxShadow(
+                                            color: Color(0x26F59E0B),
+                                            blurRadius: 18,
+                                            offset: Offset(0, 8),
+                                          ),
+                                        ]
+                                      : null,
                                 ),
-                                alignment: Alignment.center,
-                                child: Text(
-                                  _sizes[index],
-                                  style: AppTextStyles.body.copyWith(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w800,
-                                    color: selected ? AppColors.text : const Color(0xFF6B7280),
-                                  ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      fabric.toUpperCase(),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: AppTextStyles.body.copyWith(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w900,
+                                        color: AppColors.text,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'PREMIUM CHOICE',
+                                      style: AppTextStyles.body.copyWith(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                        color: selected
+                                            ? const Color(0xFF4B5563)
+                                            : const Color(0xFF9CA3AF),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             );
-                          }),
+                          }).toList(),
                         ),
-                      ),
+                      if (isJersey) ...[
+                        const SizedBox(height: 22),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _textFieldBlock(
+                                title: 'Jersey Name',
+                                child: TextField(
+                                  onChanged: (value) =>
+                                      setState(() => _customName = value),
+                                  maxLength: 15,
+                                  textCapitalization: TextCapitalization.characters,
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(
+                                      RegExp(r'[a-zA-Z0-9 ]'),
+                                    ),
+                                  ],
+                                  decoration: InputDecoration(
+                                    hintText: 'JORDAN',
+                                    counterText: '${_customName.length}/15',
+                                    filled: true,
+                                    fillColor: const Color(0xFFF8FAFC),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 14,
+                                    ),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(18),
+                                      borderSide: const BorderSide(
+                                        color: Color(0xFFE5E7EB),
+                                      ),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(18),
+                                      borderSide: const BorderSide(
+                                        color: Color(0xFFE5E7EB),
+                                      ),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(18),
+                                      borderSide: const BorderSide(
+                                        color: AppColors.gold,
+                                        width: 1.6,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: _textFieldBlock(
+                                title: 'Jersey Number',
+                                child: TextField(
+                                  onChanged: (value) =>
+                                      setState(() => _customNumber = value),
+                                  keyboardType: TextInputType.number,
+                                  maxLength: 3,
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.digitsOnly,
+                                  ],
+                                  decoration: InputDecoration(
+                                    hintText: '23',
+                                    counterText: '',
+                                    filled: true,
+                                    fillColor: const Color(0xFFF8FAFC),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 14,
+                                    ),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(18),
+                                      borderSide: const BorderSide(
+                                        color: Color(0xFFE5E7EB),
+                                      ),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(18),
+                                      borderSide: const BorderSide(
+                                        color: Color(0xFFE5E7EB),
+                                      ),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(18),
+                                      borderSide: const BorderSide(
+                                        color: AppColors.gold,
+                                        width: 1.6,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                       const SizedBox(height: 18),
                       _optionRow(
                         title: 'Quantity',
                         child: Row(
                           children: [
-                            _qtyButton(icon: Icons.remove_rounded, onTap: _quantity > 1 ? () => setState(() => _quantity--) : null),
+                            _qtyButton(
+                              icon: Icons.remove_rounded,
+                              onTap: _quantity > 1
+                                  ? () => setState(() => _quantity--)
+                                  : null,
+                            ),
                             Container(
                               width: 48,
                               alignment: Alignment.center,
@@ -295,7 +544,10 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                                 ),
                               ),
                             ),
-                            _qtyButton(icon: Icons.add_rounded, onTap: () => setState(() => _quantity++)),
+                            _qtyButton(
+                              icon: Icons.add_rounded,
+                              onTap: () => setState(() => _quantity++),
+                            ),
                           ],
                         ),
                       ),
@@ -428,7 +680,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
     );
   }
 
-  Widget _bottomActionBar(ClothingItemModel item) {
+  Widget _bottomActionBar(ClothingItemModel item, List<String> fabrics) {
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
     return Container(
       padding: EdgeInsets.fromLTRB(18, 14, 18, 14 + bottomInset),
@@ -440,17 +692,38 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
         children: [
           Expanded(
             child: OutlinedButton(
-              onPressed: () async {
-                final messenger = ScaffoldMessenger.of(context);
-                final success = await ref
-                    .read(cartProvider.notifier)
-                    .addItem(item, quantity: _quantity);
-                if (!context.mounted) return;
-                if (!success) return;
-                messenger.showSnackBar(
-                  SnackBar(content: Text('${item.name} added to cart.')),
-                );
-              },
+              onPressed: _isAddingToCart
+                  ? null
+                  : () async {
+                      final messenger = ScaffoldMessenger.of(context);
+                      if (!_validateSelections(item, fabrics)) return;
+                      setState(() => _isAddingToCart = true);
+                      messenger.hideCurrentSnackBar();
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          content: Text('Adding to cart...'),
+                          duration: Duration(seconds: 1),
+                        ),
+                      );
+
+                      final success = await ref
+                          .read(cartProvider.notifier)
+                          .addItem(
+                            item,
+                            quantity: _quantity,
+                            size: _selectedSize,
+                            fabric: _selectedFabric,
+                            customName: _normalizedCustomName(item),
+                            customNumber: _normalizedCustomNumber(item),
+                          );
+                      if (!context.mounted) return;
+                      setState(() => _isAddingToCart = false);
+                      messenger.hideCurrentSnackBar();
+                      if (!success) return;
+                      messenger.showSnackBar(
+                        SnackBar(content: Text('${item.name} added to cart.')),
+                      );
+                    },
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size.fromHeight(54),
                 side: const BorderSide(color: Color(0xFFE5E7EB)),
@@ -459,27 +732,62 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                 ),
                 backgroundColor: Colors.white,
               ),
-              child: Text(
-                'Add Cart',
-                style: AppTextStyles.body.copyWith(
-                  color: AppColors.text,
-                  fontWeight: FontWeight.w700,
-                ),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 160),
+                child: _isAddingToCart
+                    ? Row(
+                        key: const ValueKey('adding'),
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                AppColors.text,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            'Adding...',
+                            style: AppTextStyles.body.copyWith(
+                              color: AppColors.text,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      )
+                    : Text(
+                        'Add to Cart',
+                        key: const ValueKey('idle'),
+                        style: AppTextStyles.body.copyWith(
+                          color: AppColors.text,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
               ),
             ),
           ),
           const SizedBox(width: 14),
           Expanded(
             child: FilledButton(
-              onPressed: () => Navigator.pushNamed(
-                context,
-                PaymentSubmissionScreen.routeName,
-                arguments: PaymentSubmissionArgs.singleItem(
-                  item: item,
-                  quantity: _quantity,
-                  size: _sizes[_selectedSize],
-                ),
-              ),
+              onPressed: () {
+                if (!_validateSelections(item, fabrics)) return;
+                Navigator.pushNamed(
+                  context,
+                  PaymentSubmissionScreen.routeName,
+                  arguments: PaymentSubmissionArgs.singleItem(
+                    item: item,
+                    quantity: _quantity,
+                    size: _selectedSize,
+                    fabric: _selectedFabric,
+                    customName: _normalizedCustomName(item),
+                    customNumber: _normalizedCustomNumber(item),
+                  ),
+                );
+              },
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.gold,
                 foregroundColor: AppColors.text,
@@ -520,6 +828,37 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
     );
   }
 
+  Widget _selectorHeader({required String title, Widget? trailing}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Text(
+            title.toUpperCase(),
+            style: AppTextStyles.body.copyWith(
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.4,
+              color: const Color(0xFF94A3B8),
+            ),
+          ),
+          const Spacer(),
+          if (trailing != null) trailing,
+        ],
+      ),
+    );
+  }
+
+  Widget _textFieldBlock({required String title, required Widget child}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _selectorHeader(title: title),
+        child,
+      ],
+    );
+  }
+
   Widget _qtyButton({required IconData icon, required VoidCallback? onTap}) {
     return GestureDetector(
       onTap: onTap,
@@ -542,6 +881,49 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
     if (modelUrl.contains('polo')) return 'Polo';
     if (modelUrl.contains('tank')) return 'Tank Top';
     return 'T-Shirt';
+  }
+
+  bool _isJerseyProduct(ClothingItemModel item) {
+    final text = '${item.name} ${item.description ?? ''}'.toLowerCase();
+    return text.contains('jersey');
+  }
+
+  String? _normalizedCustomName(ClothingItemModel item) {
+    if (!_isJerseyProduct(item)) return null;
+    final value = _customName.trim().toUpperCase();
+    return value.isEmpty ? null : value;
+  }
+
+  String? _normalizedCustomNumber(ClothingItemModel item) {
+    if (!_isJerseyProduct(item)) return null;
+    final value = _customNumber.trim();
+    return value.isEmpty ? null : value;
+  }
+
+  bool _validateSelections(ClothingItemModel item, List<String> fabrics) {
+    final messenger = ScaffoldMessenger.of(context);
+    if ((_selectedSize ?? '').isEmpty) {
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Please choose a size first.')),
+      );
+      return false;
+    }
+    if (fabrics.isEmpty) {
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('No fabric options are available right now.')),
+      );
+      return false;
+    }
+    if ((_selectedFabric ?? '').isEmpty) {
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Please choose a fabric first.')),
+      );
+      return false;
+    }
+    return true;
   }
 
   int _soldCount(String id) {
@@ -582,7 +964,9 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
           arguments: PaymentSubmissionArgs.customDesign(design: design),
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
           const SnackBar(content: Text('Design synced back to the app.')),
         );
       }

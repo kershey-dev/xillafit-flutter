@@ -30,6 +30,9 @@ class PaymentSubmissionArgs {
     required ClothingItemModel item,
     required int quantity,
     String? size,
+    String? fabric,
+    String? customName,
+    String? customNumber,
   }) {
     return PaymentSubmissionArgs(
       directItems: [
@@ -41,6 +44,9 @@ class PaymentSubmissionArgs {
           image: item.previewImageUrl,
           category: item.description,
           size: size,
+          fabric: fabric,
+          customName: customName,
+          customNumber: customNumber,
         ),
       ],
     );
@@ -308,9 +314,6 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
       await PaymentSessionStore.clear();
       if (!mounted) return;
       setState(() => _error = error.toString());
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
     } finally {
       if (mounted) {
         setState(() {
@@ -439,9 +442,6 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
       await PaymentSessionStore.clear();
       if (!mounted) return;
       setState(() => _error = error.toString());
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
     } finally {
       if (mounted) {
         setState(() {
@@ -1066,7 +1066,15 @@ class _CheckoutItemTile extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                'Qty ${item.quantity}${(item.size ?? '').isNotEmpty ? ' - Size ${item.size}' : ''}',
+                [
+                  'Qty ${item.quantity}',
+                  if ((item.size ?? '').isNotEmpty) 'Size ${item.size}',
+                  if ((item.fabric ?? '').isNotEmpty) item.fabric!,
+                  if ((item.customName ?? '').isNotEmpty)
+                    'Name ${item.customName}',
+                  if ((item.customNumber ?? '').isNotEmpty)
+                    'No. ${item.customNumber}',
+                ].join(' - '),
                 style: AppTextStyles.caption,
               ),
             ],

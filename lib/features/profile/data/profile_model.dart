@@ -55,7 +55,7 @@ class ProfileModel {
       role: map['role']?.toString(),
       avatarUrl: map['avatar_url']?.toString(),
       contactNumber: map['contact_number']?.toString(),
-      address: map['address']?.toString(),
+      address: _composeAddress(customerProfile),
       municipality: customerProfile?['municipality']?.toString(),
       barangay: customerProfile?['barangay']?.toString(),
       streetAddress: customerProfile?['street_address']?.toString(),
@@ -75,5 +75,21 @@ class ProfileModel {
     }
     if (raw is Map) return Map<String, dynamic>.from(raw);
     return null;
+  }
+
+  static String? _composeAddress(Map<String, dynamic>? customerProfile) {
+    if (customerProfile == null) return null;
+    final parts = [
+      customerProfile['street_address']?.toString(),
+      customerProfile['barangay']?.toString(),
+      customerProfile['municipality']?.toString(),
+      customerProfile['province']?.toString(),
+      customerProfile['zip_code']?.toString(),
+    ]
+        .map((part) => part?.trim() ?? '')
+        .where((part) => part.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return null;
+    return parts.join(', ');
   }
 }

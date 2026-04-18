@@ -164,12 +164,12 @@ class OrderRepository {
     final data = await _api.post(
       '/payments/balance/$orderId',
       body: {
-        'successUrl': AppLinks.paymentBridgeUrl(
+        'successUrl': AppLinks.paymentCallbackUrl(
           success: true,
           flow: 'balance',
           orderId: orderId,
         ),
-        'cancelUrl': AppLinks.paymentBridgeUrl(
+        'cancelUrl': AppLinks.paymentCallbackUrl(
           success: false,
           flow: 'balance',
           orderId: orderId,

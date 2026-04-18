@@ -5,6 +5,7 @@ import 'package:xillafit_flutter/features/catalog/data/category_model.dart';
 import 'package:xillafit_flutter/features/catalog/data/clothing_item_model.dart';
 import 'package:xillafit_flutter/features/catalog/presentation/catalog_providers.dart';
 import 'package:xillafit_flutter/features/cart/presentation/cart_provider.dart';
+import 'package:xillafit_flutter/features/checkout/data/checkout_repository.dart';
 import 'package:xillafit_flutter/screens/mobile_webview_screen.dart';
 import 'package:xillafit_flutter/screens/payment_submission_screen.dart';
 import 'package:xillafit_flutter/screens/product_detail_screen.dart';
@@ -161,8 +162,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
         ),
-        _circleButton(icon: Icons.search_rounded, onTap: _focusSearch),
-        const SizedBox(width: 10),
         Stack(
           clipBehavior: Clip.none,
           children: [
@@ -807,7 +806,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           arguments: PaymentSubmissionArgs.customDesign(design: design),
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
           const SnackBar(content: Text('Design synced back to the app.')),
         );
       }

@@ -20,7 +20,6 @@ class ProfileRepository {
           full_name,
           role,
           contact_number,
-          address,
           account_status,
           created_at,
           avatar_url,
@@ -42,7 +41,6 @@ class ProfileRepository {
   Future<void> updateProfile({
     required String fullName,
     String? contactNumber,
-    String? address,
     String? municipality,
     String? barangay,
     String? streetAddress,
@@ -57,7 +55,6 @@ class ProfileRepository {
     await _client.from('profiles').update({
       'full_name': fullName.trim(),
       'contact_number': (contactNumber ?? '').trim().isEmpty ? null : contactNumber!.trim(),
-      'address': (address ?? '').trim().isEmpty ? null : address!.trim(),
     }).eq('id', userId);
 
     await _client.from('customer_profiles').upsert({

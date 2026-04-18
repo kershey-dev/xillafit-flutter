@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:xillafit_flutter/core/config/app_links.dart';
 import 'package:xillafit_flutter/screens/cart_placeholder_screen.dart';
 import 'package:xillafit_flutter/screens/home_screen.dart';
 import 'package:xillafit_flutter/screens/messages_screen.dart';
+import 'package:xillafit_flutter/screens/mobile_webview_screen.dart';
 import 'package:xillafit_flutter/screens/notifications_screen.dart';
 import 'package:xillafit_flutter/screens/profile_placeholder_screen.dart';
 import 'package:xillafit_flutter/widgets/common/bottom_nav_bar.dart';
@@ -20,10 +22,14 @@ class _MainShellState extends State<MainShell> {
 
   List<Widget> get _tabs => [
     HomeScreen(
-      onOpenCart: () => setState(() => _index = 1),
+      onOpenCart: () => Navigator.of(context).pushNamed(CartPlaceholderScreen.routeName),
     ),
-    const CartPlaceholderScreen(),
     const MessagesScreen(embeddedInShell: true),
+    const MobileWebViewScreen(
+      title: '3D Customizer',
+      initialUrl: AppLinks.customizeUrl,
+      mode: MobileWebViewMode.customizer,
+    ),
     const NotificationsScreen(showScaffold: false),
     const ProfilePlaceholderScreen(),
   ];
@@ -31,7 +37,6 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBody: true,
       body: SafeArea(
         bottom: false,
         child: IndexedStack(index: _index, children: _tabs),

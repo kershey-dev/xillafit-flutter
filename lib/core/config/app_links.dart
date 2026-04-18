@@ -1,4 +1,6 @@
 class AppLinks {
+  static const mobileScheme = 'xillafit';
+
   static const backendApiUrl = String.fromEnvironment(
     'XILLAFIT_API_URL',
     defaultValue: 'https://server.xillafit.com/api/v1/',
@@ -14,18 +16,35 @@ class AppLinks {
     defaultValue: 'https://xillafit.com',
   );
 
-  static const authRedirectScheme = String.fromEnvironment(
-    'XILLAFIT_AUTH_SCHEME',
-    defaultValue: 'xillafit',
-  );
-
-  static const authRedirectHost = String.fromEnvironment(
+  static const legacyAuthRedirectHost = String.fromEnvironment(
     'XILLAFIT_AUTH_HOST',
     defaultValue: 'login-callback',
   );
 
+  static const authHost = 'auth';
+  static const paymentHost = 'payment';
+  static const customizerHost = 'customizer';
+  static const authCallbackPath = '/callback';
+  static const paymentSuccessPath = '/success';
+  static const paymentCancelPath = '/cancel';
+  static const customizerCompletePath = '/complete';
+  static const customizerCancelPath = '/cancel';
+  static const paymentBridgePath = '/mobile-payment-callback';
+  static const authBridgePath = '/mobile-auth-callback';
+
   static const googleAuthRedirectUrl =
-      '$authRedirectScheme://$authRedirectHost';
+      '$mobileScheme://$legacyAuthRedirectHost';
+
+  static String authCallbackUrl({
+    Map<String, String>? queryParameters,
+  }) {
+    return Uri(
+      scheme: mobileScheme,
+      host: authHost,
+      path: authCallbackPath,
+      queryParameters: queryParameters,
+    ).toString();
+  }
 
   static String paymentCallbackUrl({
     required bool success,
@@ -42,9 +61,9 @@ class AppLinks {
     };
 
     return Uri(
-      scheme: authRedirectScheme,
-      host: authRedirectHost,
-      path: '/payment',
+      scheme: mobileScheme,
+      host: paymentHost,
+      path: success ? paymentSuccessPath : paymentCancelPath,
       queryParameters: query,
     ).toString();
   }
@@ -56,13 +75,34 @@ class AppLinks {
     String? referenceId,
   }) {
     return Uri.parse(siteUrl).replace(
-      path: '/mobile-payment-callback',
+      path: paymentBridgePath,
       queryParameters: <String, String>{
         'success': success ? 'true' : 'false',
         if ((flow ?? '').trim().isNotEmpty) 'flow': flow!.trim(),
         if ((orderId ?? '').trim().isNotEmpty) 'orderId': orderId!.trim(),
         if ((referenceId ?? '').trim().isNotEmpty)
           'referenceId': referenceId!.trim(),
+      },
+    ).toString();
+  }
+
+  static String authBridgeUrl({Map<String, String>? queryParameters}) {
+    return Uri.parse(siteUrl).replace(
+      path: authBridgePath,
+      queryParameters: queryParameters,
+    ).toString();
+  }
+
+  static String customizerCallbackUrl({
+    required bool saved,
+    String? productId,
+  }) {
+    return Uri(
+      scheme: mobileScheme,
+      host: customizerHost,
+      path: saved ? customizerCompletePath : customizerCancelPath,
+      queryParameters: <String, String>{
+        if ((productId ?? '').trim().isNotEmpty) 'productId': productId!.trim(),
       },
     ).toString();
   }

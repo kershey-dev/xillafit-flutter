@@ -48,6 +48,21 @@ class _ProfilePlaceholderScreenState
   String? _passwordSuccess;
 
   @override
+  void initState() {
+    super.initState();
+    _currentPasswordController.addListener(_handlePasswordInputChanged);
+    _newPasswordController.addListener(_handlePasswordInputChanged);
+    _confirmPasswordController.addListener(_handlePasswordInputChanged);
+  }
+
+  BulacanMunicipality? _municipalityByName(String value) {
+    for (final municipality in bulacanMunicipalities) {
+      if (municipality.name == value) return municipality;
+    }
+    return null;
+  }
+
+  @override
   void dispose() {
     _firstNameController.dispose();
     _lastNameController.dispose();
@@ -57,6 +72,15 @@ class _ProfilePlaceholderScreenState
     _newPasswordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
+  }
+
+  void _handlePasswordInputChanged() {
+    if (!mounted) return;
+    if (_passwordError == null && _passwordSuccess == null) {
+      setState(() {});
+      return;
+    }
+    setState(_clearPasswordFeedback);
   }
 
   Future<void> _signOut() async {
@@ -80,14 +104,17 @@ class _ProfilePlaceholderScreenState
     if (_initializedForm) return;
     final fullName = (profile?.fullName ?? '').trim();
     final nameParts = fullName.split(RegExp(r'\s+')).where((part) => part.isNotEmpty).toList();
+    final municipality = profile?.municipality ?? '';
+    final selectedMunicipality = _municipalityByName(municipality);
+    final barangay = profile?.barangay ?? '';
     _firstNameController.text = nameParts.isNotEmpty ? nameParts.first : '';
     _lastNameController.text =
         nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
     _contactNumberController.text = profile?.contactNumber ?? '';
     _streetAddressController.text = profile?.streetAddress ?? '';
-    _municipality = profile?.municipality ?? '';
-    _barangay = profile?.barangay ?? '';
-    _zipCode = profile?.zipCode ?? '';
+    _municipality = selectedMunicipality?.name ?? '';
+    _barangay = selectedMunicipality?.barangays.contains(barangay) == true ? barangay : '';
+    _zipCode = selectedMunicipality?.zipCode ?? (profile?.zipCode ?? '');
     _initializedForm = true;
   }
 
@@ -122,18 +149,9 @@ class _ProfilePlaceholderScreenState
     });
 
     try {
-      final address = [
-        street,
-        _barangay,
-        _municipality,
-        'Bulacan',
-        _zipCode,
-      ].where((part) => part.trim().isNotEmpty).join(', ');
-
       await ref.read(profileRepositoryProvider).updateProfile(
             fullName: fullName,
             contactNumber: contact,
-            address: address,
             municipality: _municipality,
             barangay: _barangay,
             streetAddress: street,
@@ -170,6 +188,42 @@ class _ProfilePlaceholderScreenState
   void _clearPasswordFeedback() {
     _passwordError = null;
     _passwordSuccess = null;
+  }
+
+  String? _passwordValidationMessage(User? user) {
+    final mode = _passwordMode(user);
+    if (user == null || mode == 'none' || mode == 'unknown') return null;
+
+    final currentPassword = _currentPasswordController.text;
+    final newPassword = _newPasswordController.text.trim();
+    final confirmPassword = _confirmPasswordController.text.trim();
+
+    if (mode == 'email' && currentPassword.isEmpty) {
+      return 'Enter your current password.';
+    }
+    if (newPassword.isEmpty) {
+      return 'Enter a password with at least 8 characters.';
+    }
+    if (newPassword.length < 8) {
+      return 'Password must be at least 8 characters.';
+    }
+    if (confirmPassword.isEmpty) {
+      return 'Confirm your password.';
+    }
+    if (newPassword != confirmPassword) {
+      return 'Password and confirmation do not match.';
+    }
+    if (mode == 'email' && currentPassword == newPassword) {
+      return 'Choose a password different from your current one.';
+    }
+    return null;
+  }
+
+  bool _canSubmitPassword(User? user) {
+    if (_passwordSaving) return false;
+    final mode = _passwordMode(user);
+    if (user == null || mode == 'none' || mode == 'unknown') return false;
+    return _passwordValidationMessage(user) == null;
   }
 
   Future<void> _updatePassword(User? user) async {
@@ -250,7 +304,6 @@ class _ProfilePlaceholderScreenState
     final session = ref.watch(authSessionProvider).asData?.value;
     final authUser = session?.user;
     final authEmail = session?.user.email;
-    final authUserId = session?.user.id;
     final profileAsync = ref.watch(currentProfileProvider);
 
     return LayoutBuilder(
@@ -277,6 +330,69 @@ class _ProfilePlaceholderScreenState
                     _ProfileHero(
                       email: authEmail,
                       profileAsync: profileAsync,
+                      signingOut: _loading,
+                      onSignOut: _loading ? null : _signOut,
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    Container(
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: AppColors.border),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x0D0F172A),
+                            blurRadius: 18,
+                            offset: Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Account Actions',
+                            style: AppTextStyles.body.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.text,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          Text(
+                            'Manage your session securely from this device.',
+                            style: AppTextStyles.caption.copyWith(
+                              color: AppColors.muted,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: () => Navigator.pushNamed(
+                                context,
+                                OrderHistoryScreen.routeName,
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                minimumSize: const Size.fromHeight(46),
+                                backgroundColor: AppColors.goldBright,
+                                foregroundColor: AppColors.text,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                              ),
+                              child: Text(
+                                'View Orders',
+                                style: AppTextStyles.body.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.text,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: AppSpacing.lg),
                     profileAsync.when(
@@ -290,7 +406,6 @@ class _ProfilePlaceholderScreenState
                         return _ProfileDetailsCard(
                           profile: profile,
                           authEmail: authEmail,
-                          authUserId: authUserId,
                           editing: _editing,
                           saving: _saving,
                           formError: _formError,
@@ -338,6 +453,9 @@ class _ProfilePlaceholderScreenState
                       passwordSaving: _passwordSaving,
                       passwordError: _passwordError,
                       passwordSuccess: _passwordSuccess,
+                      passwordValidationMessage:
+                          _passwordValidationMessage(authUser),
+                      canSubmit: _canSubmitPassword(authUser),
                       currentPasswordController: _currentPasswordController,
                       newPasswordController: _newPasswordController,
                       confirmPasswordController: _confirmPasswordController,
@@ -355,66 +473,6 @@ class _ProfilePlaceholderScreenState
                       },
                       onSubmit: () => _updatePassword(authUser),
                     ),
-                    const SizedBox(height: AppSpacing.lg),
-                    Container(
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: AppColors.border),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x0D0F172A),
-                            blurRadius: 18,
-                            offset: Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Account Actions',
-                            style: AppTextStyles.body.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.text,
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.xs),
-                          Text(
-                            'Manage your session securely from this device.',
-                            style: AppTextStyles.caption.copyWith(
-                              color: AppColors.muted,
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.md),
-                          OutlinedButton(
-                            onPressed: () =>
-                                Navigator.pushNamed(context, OrderHistoryScreen.routeName),
-                            style: OutlinedButton.styleFrom(
-                              minimumSize: const Size.fromHeight(46),
-                              side: const BorderSide(color: AppColors.border),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                            ),
-                            child: Text(
-                              'View Orders',
-                              style: AppTextStyles.body.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.text,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.sm),
-                          PrimaryButton(
-                            text: _loading ? 'Signing out...' : 'Sign out',
-                            isLoading: _loading,
-                            onPressed: _loading ? null : _signOut,
-                          ),
-                        ],
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -430,10 +488,14 @@ class _ProfileHero extends StatelessWidget {
   const _ProfileHero({
     required this.email,
     required this.profileAsync,
+    required this.signingOut,
+    required this.onSignOut,
   });
 
   final String? email;
   final AsyncValue<ProfileModel?> profileAsync;
+  final bool signingOut;
+  final VoidCallback? onSignOut;
 
   @override
   Widget build(BuildContext context) {
@@ -468,29 +530,59 @@ class _ProfileHero extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 78,
-            height: 78,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [AppColors.goldBright, AppColors.goldDark],
-              ),
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x33F59E0B),
-                  blurRadius: 18,
-                  offset: Offset(0, 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 78,
+                height: 78,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [AppColors.goldBright, AppColors.goldDark],
+                  ),
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x33F59E0B),
+                      blurRadius: 18,
+                      offset: Offset(0, 10),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: const Icon(
-              Icons.person_outline_rounded,
-              color: Colors.white,
-              size: 34,
-            ),
+                child: const Icon(
+                  Icons.person_outline_rounded,
+                  color: Colors.white,
+                  size: 34,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.92),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: const Color(0xFFF8D58D)),
+                ),
+                child: IconButton(
+                  tooltip: 'Sign out',
+                  onPressed: onSignOut,
+                  icon: signingOut
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.text,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.logout_rounded,
+                          color: AppColors.text,
+                        ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: AppSpacing.md),
           Text(
@@ -529,7 +621,6 @@ class _ProfileDetailsCard extends StatelessWidget {
   const _ProfileDetailsCard({
     required this.profile,
     required this.authEmail,
-    required this.authUserId,
     required this.editing,
     required this.saving,
     required this.formError,
@@ -550,7 +641,6 @@ class _ProfileDetailsCard extends StatelessWidget {
 
   final ProfileModel? profile;
   final String? authEmail;
-  final String? authUserId;
   final bool editing;
   final bool saving;
   final String? formError;
@@ -571,7 +661,6 @@ class _ProfileDetailsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final email = profile?.hasEmail == true ? profile!.email! : (authEmail ?? '-');
-    final profileId = profile?.id ?? authUserId ?? '-';
     final role = profile?.hasRole == true ? profile!.role! : '-';
     BulacanMunicipality? selectedMunicipality;
     for (final item in bulacanMunicipalities) {
@@ -772,11 +861,6 @@ class _ProfileDetailsCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           _FieldGroup(
-            label: 'Profile ID',
-            child: _ReadOnlyField(value: profileId, compact: true),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          _FieldGroup(
             label: 'Role',
             child: _ReadOnlyField(value: role),
           ),
@@ -925,6 +1009,8 @@ class _SecurityCard extends StatelessWidget {
     required this.passwordSaving,
     required this.passwordError,
     required this.passwordSuccess,
+    required this.passwordValidationMessage,
+    required this.canSubmit,
     required this.currentPasswordController,
     required this.newPasswordController,
     required this.confirmPasswordController,
@@ -941,6 +1027,8 @@ class _SecurityCard extends StatelessWidget {
   final bool passwordSaving;
   final String? passwordError;
   final String? passwordSuccess;
+  final String? passwordValidationMessage;
+  final bool canSubmit;
   final TextEditingController currentPasswordController;
   final TextEditingController newPasswordController;
   final TextEditingController confirmPasswordController;
@@ -1053,6 +1141,15 @@ class _SecurityCard extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.sm),
             ],
+            if (passwordError == null &&
+                passwordSuccess == null &&
+                passwordValidationMessage != null) ...[
+              Text(
+                passwordValidationMessage!,
+                style: AppTextStyles.caption.copyWith(color: Colors.red.shade700),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+            ],
             if (mode == 'social') ...[
               Container(
                 width: double.infinity,
@@ -1081,6 +1178,7 @@ class _SecurityCard extends StatelessWidget {
                   hintText: 'Enter current password',
                   obscureText: !showCurrentPassword,
                   onToggleVisibility: onToggleCurrentPassword,
+                  textInputAction: TextInputAction.next,
                 ),
               ),
               const SizedBox(height: AppSpacing.sm),
@@ -1095,6 +1193,7 @@ class _SecurityCard extends StatelessWidget {
                       hintText: 'At least 8 characters',
                       obscureText: !showNewPassword,
                       onToggleVisibility: onToggleNewPassword,
+                      textInputAction: TextInputAction.next,
                     ),
                   ),
                 ),
@@ -1107,6 +1206,10 @@ class _SecurityCard extends StatelessWidget {
                       hintText: 'Re-enter password',
                       obscureText: !showConfirmPassword,
                       onToggleVisibility: onToggleConfirmPassword,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) {
+                        if (canSubmit) onSubmit();
+                      },
                     ),
                   ),
                 ),
@@ -1122,7 +1225,7 @@ class _SecurityCard extends StatelessWidget {
                       ? 'Saving...'
                       : (mode == 'social' ? 'Add Password' : 'Update Password'),
                   isLoading: passwordSaving,
-                  onPressed: passwordSaving ? null : onSubmit,
+                  onPressed: canSubmit ? onSubmit : null,
                 ),
               ),
             ),
@@ -1163,11 +1266,9 @@ class _FieldGroup extends StatelessWidget {
 class _ReadOnlyField extends StatelessWidget {
   const _ReadOnlyField({
     required this.value,
-    this.compact = false,
   });
 
   final String value;
-  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -1184,7 +1285,7 @@ class _ReadOnlyField extends StatelessWidget {
         style: AppTextStyles.body.copyWith(
           color: AppColors.text,
           fontWeight: FontWeight.w600,
-          fontSize: compact ? 13 : 14,
+          fontSize: 14,
           height: 1.35,
         ),
       ),
@@ -1198,18 +1299,24 @@ class _PasswordField extends StatelessWidget {
     required this.hintText,
     required this.obscureText,
     required this.onToggleVisibility,
+    this.textInputAction,
+    this.onSubmitted,
   });
 
   final TextEditingController controller;
   final String hintText;
   final bool obscureText;
   final VoidCallback onToggleVisibility;
+  final TextInputAction? textInputAction;
+  final ValueChanged<String>? onSubmitted;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
       obscureText: obscureText,
+      textInputAction: textInputAction,
+      onSubmitted: onSubmitted,
       decoration: InputDecoration(
         hintText: hintText,
         filled: true,
@@ -1308,8 +1415,10 @@ class _SelectField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final validValue = items.any((item) => item.value == value) ? value : null;
+
     return DropdownButtonFormField<String>(
-      value: value,
+      initialValue: validValue,
       items: items,
       onChanged: onChanged,
       decoration: InputDecoration(

@@ -30,6 +30,8 @@ class SupportMessage {
     required this.receiverProfileId,
     required this.messageContent,
     required this.status,
+    this.imageUrl,
+    this.messageType,
     this.sentAt,
   });
 
@@ -38,7 +40,12 @@ class SupportMessage {
   final String receiverProfileId;
   final String messageContent;
   final String status;
+  final String? imageUrl;
+  final String? messageType;
   final DateTime? sentAt;
+
+  bool get hasImage => (imageUrl ?? '').trim().isNotEmpty;
+  bool get hasText => messageContent.trim().isNotEmpty;
 
   factory SupportMessage.fromMap(Map<String, dynamic> map) {
     return SupportMessage(
@@ -47,8 +54,37 @@ class SupportMessage {
       receiverProfileId: map['receiver_profile_id']?.toString() ?? '',
       messageContent: map['message_content']?.toString() ?? '',
       status: map['status']?.toString() ?? 'sent',
-      sentAt: DateTime.tryParse(map['sent_at']?.toString() ?? ''),
+      imageUrl: map['image_url']?.toString(),
+      messageType: map['message_type']?.toString(),
+      sentAt: _parseSentAt(map['sent_at']),
     );
+  }
+
+  static DateTime? _parseSentAt(dynamic raw) {
+    final text = raw?.toString().trim() ?? '';
+    if (text.isEmpty) return null;
+
+    final parsed = DateTime.tryParse(text);
+    if (parsed == null) return null;
+
+    final hasExplicitZone =
+        text.endsWith('Z') || RegExp(r'[+-]\d{2}:\d{2}$').hasMatch(text);
+    if (hasExplicitZone) {
+      return parsed.toLocal();
+    }
+
+    // Supabase timestamps can arrive without a zone suffix; treat them as UTC
+    // so they display correctly on the device in local time.
+    return DateTime.utc(
+      parsed.year,
+      parsed.month,
+      parsed.day,
+      parsed.hour,
+      parsed.minute,
+      parsed.second,
+      parsed.millisecond,
+      parsed.microsecond,
+    ).toLocal();
   }
 }
 

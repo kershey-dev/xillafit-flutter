@@ -36,6 +36,10 @@ class CheckoutLineItem {
     this.image,
     this.category,
     this.size,
+    this.fabric,
+    this.customDesignId,
+    this.customName,
+    this.customNumber,
   });
 
   final String id;
@@ -45,18 +49,26 @@ class CheckoutLineItem {
   final String? image;
   final String? category;
   final String? size;
+  final String? fabric;
+  final String? customDesignId;
+  final String? customName;
+  final String? customNumber;
 
   double get subtotal => price * quantity;
 
   Map<String, dynamic> toApiMap() {
     return {
-      'id': id,
+      if (id.trim().isNotEmpty) 'id': id,
       'name': name,
       'price': price,
       'image': image,
       'quantity': quantity,
       'category': category,
       if ((size ?? '').trim().isNotEmpty) 'size': size,
+      if ((fabric ?? '').trim().isNotEmpty) 'fabric': fabric,
+      if ((customDesignId ?? '').trim().isNotEmpty) 'customDesignId': customDesignId,
+      if ((customName ?? '').trim().isNotEmpty) 'customName': customName,
+      if ((customNumber ?? '').trim().isNotEmpty) 'customNumber': customNumber,
     };
   }
 
@@ -68,6 +80,10 @@ class CheckoutLineItem {
       quantity: line.quantity,
       image: line.item.previewImageUrl,
       category: line.item.description,
+      size: line.size,
+      fabric: line.fabric,
+      customName: line.customName,
+      customNumber: line.customNumber,
     );
   }
 }
@@ -137,6 +153,7 @@ class CustomDesignDraft {
       'id': designId,
       'name': name,
       'description': 'Saved from mobile customizer',
+      if ((productId ?? '').trim().isNotEmpty) 'productId': productId,
       if ((color ?? '').trim().isNotEmpty) 'color': color,
       if ((previewImage ?? '').trim().isNotEmpty) 'previewImage': previewImage,
       if ((backPreviewImage ?? '').trim().isNotEmpty)

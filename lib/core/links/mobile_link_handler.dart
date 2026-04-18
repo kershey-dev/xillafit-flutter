@@ -7,15 +7,22 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:xillafit_flutter/core/config/app_links.dart';
 import 'package:xillafit_flutter/core/network/backend_api_client.dart';
 import 'package:xillafit_flutter/core/payments/payment_session_store.dart';
+import 'package:xillafit_flutter/screens/main_shell.dart';
 import 'package:xillafit_flutter/screens/order_history_screen.dart';
 import 'package:xillafit_flutter/screens/order_tracking_screen.dart';
 
-class PaymentReturnHandler {
-  PaymentReturnHandler({
+class MobileLinkHandler {
+  MobileLinkHandler({
     required GlobalKey<NavigatorState> navigatorKey,
   })  : _navigatorKey = navigatorKey,
         _appLinks = applinks.AppLinks(),
-        _api = BackendApiClient(supabase: Supabase.instance.client);
+        _api = BackendApiClient(supabase: Supabase.instance.client) {
+    _instance = this;
+  }
+
+  static MobileLinkHandler? _instance;
+
+  static MobileLinkHandler? get instance => _instance;
 
   final GlobalKey<NavigatorState> _navigatorKey;
   final applinks.AppLinks _appLinks;
@@ -23,7 +30,7 @@ class PaymentReturnHandler {
 
   StreamSubscription<Uri>? _linkSubscription;
   bool _initialized = false;
-  bool _handling = false;
+  bool _handlingPayment = false;
   String? _backgroundSyncSessionId;
 
   Future<void> initialize() async {
@@ -32,18 +39,18 @@ class PaymentReturnHandler {
     WidgetsBinding.instance.addObserver(_lifecycleObserver);
 
     final initialUri = await _appLinks.getInitialLink();
-    debugPrint('[PAYMENT_RETURN] initialize initialUri=$initialUri');
+    debugPrint('[MOBILE_LINKS] initialize initialUri=$initialUri');
     if (initialUri != null) {
-      unawaited(_handleUri(initialUri));
+      unawaited(handleUri(initialUri));
     }
 
     _linkSubscription = _appLinks.uriLinkStream.listen(
       (uri) {
-        debugPrint('[PAYMENT_RETURN] stream uri=$uri');
-        unawaited(_handleUri(uri));
+        debugPrint('[MOBILE_LINKS] stream uri=$uri');
+        unawaited(handleUri(uri));
       },
       onError: (error) {
-        debugPrint('[PAYMENT_RETURN] stream error=$error');
+        debugPrint('[MOBILE_LINKS] stream error=$error');
       },
     );
   }
@@ -55,62 +62,135 @@ class PaymentReturnHandler {
   }
 
   late final WidgetsBindingObserver _lifecycleObserver =
-      _PaymentLifecycleObserver(onResume: _handleAppResume);
+      _MobileLinksLifecycleObserver(onResume: _handleAppResume);
+
+  bool canHandleUri(Uri uri) {
+    return _isPaymentCallback(uri) || _isAuthCallback(uri);
+  }
+
+  Future<bool> handleUri(Uri uri) async {
+    if (_isPaymentCallback(uri)) {
+      await _handlePaymentUri(uri);
+      return true;
+    }
+    if (_isAuthCallback(uri)) {
+      await _handleAuthUri(uri);
+      return true;
+    }
+    return false;
+  }
 
   bool _isPaymentCallback(Uri uri) {
-    return uri.scheme == AppLinks.authRedirectScheme &&
-        uri.host == AppLinks.authRedirectHost &&
+    final params = _mergedParams(uri);
+    final isNewShape = uri.scheme == AppLinks.mobileScheme &&
+        uri.host == AppLinks.paymentHost &&
+        (uri.path == AppLinks.paymentSuccessPath ||
+            uri.path == AppLinks.paymentCancelPath);
+    final isLegacyShape = uri.scheme == AppLinks.mobileScheme &&
+        uri.host == AppLinks.legacyAuthRedirectHost &&
         uri.path.startsWith('/payment');
+    final isBridgeShape = _isSiteBridgeUri(uri, AppLinks.paymentBridgePath) &&
+        params.containsKey('success');
+    return isNewShape || isLegacyShape || isBridgeShape;
+  }
+
+  bool _isAuthCallback(Uri uri) {
+    final params = _mergedParams(uri);
+    final isNewShape = uri.scheme == AppLinks.mobileScheme &&
+        uri.host == AppLinks.authHost;
+    final isLegacyShape = uri.scheme == AppLinks.mobileScheme &&
+        uri.host == AppLinks.legacyAuthRedirectHost &&
+        !uri.path.startsWith('/payment');
+    final isBridgeShape =
+        _isSiteBridgeUri(uri, AppLinks.authBridgePath) &&
+            (params.containsKey('refresh_token') ||
+                params.containsKey('session') ||
+                params.containsKey('access_token'));
+    return isNewShape || isLegacyShape || isBridgeShape;
+  }
+
+  bool _isSiteBridgeUri(Uri uri, String expectedPath) {
+    final siteUri = Uri.parse(AppLinks.siteUrl);
+    return uri.host == siteUri.host && uri.path == expectedPath;
+  }
+
+  Map<String, String> _mergedParams(Uri uri) {
+    final merged = <String, String>{...uri.queryParameters};
+    final fragment = uri.fragment.trim();
+    if (fragment.isNotEmpty) {
+      final normalized = fragment.startsWith('?') ? fragment.substring(1) : fragment;
+      try {
+        merged.addAll(Uri.splitQueryString(normalized));
+      } catch (_) {
+        final queryIndex = normalized.indexOf('?');
+        if (queryIndex >= 0 && queryIndex < normalized.length - 1) {
+          merged.addAll(Uri.splitQueryString(normalized.substring(queryIndex + 1)));
+        }
+      }
+    }
+    return merged;
   }
 
   Future<void> _handleAppResume() async {
     final pendingSession = await PaymentSessionStore.read();
-    if (pendingSession == null || pendingSession.sessionId.isEmpty || _handling) {
+    if (pendingSession == null || pendingSession.sessionId.isEmpty || _handlingPayment) {
       return;
     }
 
-    debugPrint(
-      '[PAYMENT_RETURN] app resumed with pending session='
-      '${pendingSession.sessionId} flow=${pendingSession.flow}',
+    final fallbackUri = Uri.parse(
+      AppLinks.paymentCallbackUrl(
+        success: true,
+        flow: pendingSession.flow,
+        orderId: pendingSession.orderId,
+        referenceId: pendingSession.referenceId,
+      ),
     );
 
-    final fallbackUri = Uri(
-      scheme: AppLinks.authRedirectScheme,
-      host: AppLinks.authRedirectHost,
-      path: '/payment',
-      queryParameters: <String, String>{
-        'success': 'true',
-        if ((pendingSession.flow).trim().isNotEmpty) 'flow': pendingSession.flow,
-        if ((pendingSession.orderId ?? '').trim().isNotEmpty)
-          'orderId': pendingSession.orderId!,
-        if ((pendingSession.referenceId ?? '').trim().isNotEmpty)
-          'referenceId': pendingSession.referenceId!,
-      },
-    );
-
-    await _handleUri(fallbackUri);
+    await _handlePaymentUri(fallbackUri);
   }
 
-  Future<void> _handleUri(Uri uri) async {
-    if (!_isPaymentCallback(uri) || _handling) return;
-    _handling = true;
+  Future<void> _handleAuthUri(Uri uri) async {
+    final params = _mergedParams(uri);
+    try {
+      if ((params['session'] ?? '').trim().isNotEmpty) {
+        await Supabase.instance.client.auth.recoverSession(
+          Uri.decodeComponent(params['session']!.trim()),
+        );
+      } else if ((params['refresh_token'] ?? '').trim().isNotEmpty) {
+        await Supabase.instance.client.auth.setSession(
+          params['refresh_token']!.trim(),
+        );
+      } else {
+        _showSnackBar('Sign-in link opened, but no session data was included.');
+        return;
+      }
+
+      _showSnackBar('Signed in successfully on mobile.');
+      _navigatorKey.currentState?.pushNamedAndRemoveUntil(
+        MainShell.routeName,
+        (_) => false,
+      );
+    } catch (error) {
+      debugPrint('[MOBILE_LINKS] auth restore failed error=$error');
+      _showSnackBar('Could not restore your session. Please sign in again.');
+    }
+  }
+
+  Future<void> _handlePaymentUri(Uri uri) async {
+    if (_handlingPayment) return;
+    _handlingPayment = true;
 
     try {
-      final success = uri.queryParameters['success'] == 'true';
+      final params = _mergedParams(uri);
+      final success = params['success'] != 'false' &&
+          uri.path != AppLinks.paymentCancelPath;
       final pendingSession = await PaymentSessionStore.read();
-      String? resolvedOrderId = pendingSession?.orderId;
-      debugPrint(
-        '[PAYMENT_RETURN] handle uri=$uri success=$success '
-        'pendingSession=${pendingSession?.sessionId} flow=${pendingSession?.flow} '
-        'orderId=${pendingSession?.orderId} ref=${pendingSession?.referenceId}',
-      );
+      String? resolvedOrderId = params['orderId'] ?? pendingSession?.orderId;
 
       if (!success) {
         await PaymentSessionStore.clear();
         _showSnackBar('Payment was not completed.');
-        _navigateAfterReturn(
-          orderId: uri.queryParameters['orderId'] ?? pendingSession?.orderId,
-        );
+        _navigateAfterPaymentReturn(orderId: resolvedOrderId);
         return;
       }
 
@@ -139,9 +219,9 @@ class PaymentReturnHandler {
         );
       }
 
-      _navigateAfterReturn(orderId: resolvedOrderId);
+      _navigateAfterPaymentReturn(orderId: resolvedOrderId);
     } finally {
-      _handling = false;
+      _handlingPayment = false;
     }
   }
 
@@ -150,7 +230,6 @@ class PaymentReturnHandler {
     String? currentOrderId,
   ) async {
     try {
-      debugPrint('[PAYMENT_RETURN] capture attempt session=$sessionId');
       final response = await _api.post(
         '/payments/capture',
         body: {'sessionId': sessionId},
@@ -162,23 +241,17 @@ class PaymentReturnHandler {
           resolvedOrderId = order['id']?.toString() ?? resolvedOrderId;
         }
       }
-      debugPrint('[PAYMENT_RETURN] capture success');
       return _CaptureResult(
         confirmed: true,
         orderId: resolvedOrderId,
       );
     } on BackendApiException catch (error) {
-      debugPrint(
-        '[PAYMENT_RETURN] capture backend error '
-        'status=${error.statusCode} message=${error.message}',
-      );
       return _CaptureResult(
         confirmed: false,
         orderId: currentOrderId,
         retryable: error.statusCode == 400,
       );
-    } catch (error) {
-      debugPrint('[PAYMENT_RETURN] capture unknown error error=$error');
+    } catch (_) {
       return _CaptureResult(
         confirmed: false,
         orderId: currentOrderId,
@@ -220,16 +293,14 @@ class PaymentReturnHandler {
   Future<void> _clearCartAfterPayment() async {
     try {
       await _api.delete('/cart');
-      debugPrint('[PAYMENT_RETURN] cart cleared after confirmed payment');
     } catch (error) {
-      debugPrint('[PAYMENT_RETURN] cart clear failed error=$error');
+      debugPrint('[MOBILE_LINKS] cart clear failed error=$error');
     }
   }
 
-  void _navigateAfterReturn({String? orderId}) {
+  void _navigateAfterPaymentReturn({String? orderId}) {
     final navigator = _navigatorKey.currentState;
     if (navigator == null) return;
-    debugPrint('[PAYMENT_RETURN] navigateAfterReturn orderId=$orderId');
 
     if ((orderId ?? '').trim().isNotEmpty) {
       navigator.pushNamedAndRemoveUntil(
@@ -249,8 +320,9 @@ class PaymentReturnHandler {
   void _showSnackBar(String message) {
     final context = _navigatorKey.currentContext;
     if (context == null) return;
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    messenger?.showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 }
 
@@ -266,8 +338,8 @@ class _CaptureResult {
   final bool retryable;
 }
 
-class _PaymentLifecycleObserver with WidgetsBindingObserver {
-  _PaymentLifecycleObserver({required this.onResume});
+class _MobileLinksLifecycleObserver with WidgetsBindingObserver {
+  _MobileLinksLifecycleObserver({required this.onResume});
 
   final Future<void> Function() onResume;
 
