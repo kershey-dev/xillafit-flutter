@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:xillafit_flutter/core/config/app_links.dart';
 import 'package:xillafit_flutter/features/catalog/data/clothing_item_model.dart';
 import 'package:xillafit_flutter/features/catalog/presentation/catalog_providers.dart';
 import 'package:xillafit_flutter/features/cart/presentation/cart_provider.dart';
+import 'package:xillafit_flutter/screens/mobile_webview_screen.dart';
 import 'package:xillafit_flutter/screens/payment_submission_screen.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
 
@@ -90,7 +90,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                               ? Image.network(
                                   item.previewImageUrl!,
                                   fit: BoxFit.contain,
-                                  errorBuilder: (_, __, ___) => const Icon(
+                                  errorBuilder: (_, _, _) => const Icon(
                                     Icons.checkroom_rounded,
                                     size: 96,
                                     color: Color(0xFFCBD5E1),
@@ -441,12 +441,13 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
           Expanded(
             child: OutlinedButton(
               onPressed: () async {
+                final messenger = ScaffoldMessenger.of(context);
                 final success = await ref
                     .read(cartProvider.notifier)
                     .addItem(item, quantity: _quantity);
                 if (!context.mounted) return;
                 if (!success) return;
-                ScaffoldMessenger.of(context).showSnackBar(
+                messenger.showSnackBar(
                   SnackBar(content: Text('${item.name} added to cart.')),
                 );
               },
@@ -559,12 +560,32 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   }
 
   Future<void> _openCustomizationWeb() async {
-    final uri = Uri.parse(AppLinks.customizeUrl);
-    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!launched && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open customization website.')),
-      );
+    final args = ModalRoute.of(context)?.settings.arguments;
+    final detailArgs = args is ProductDetailArgs ? args : null;
+    final result = await Navigator.of(context).push<Map<String, dynamic>>(
+      MaterialPageRoute(
+        builder: (_) => MobileWebViewScreen(
+          title: '3D Customizer',
+          initialUrl: AppLinks.customizeUrl,
+          mode: MobileWebViewMode.customizer,
+          productId: detailArgs?.itemId,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (result != null && result.isNotEmpty) {
+      final design = CustomDesignDraft.fromCustomizerResult(result);
+      if (design.designId.isNotEmpty) {
+        await Navigator.pushNamed(
+          context,
+          PaymentSubmissionScreen.routeName,
+          arguments: PaymentSubmissionArgs.customDesign(design: design),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Design synced back to the app.')),
+        );
+      }
     }
   }
 }

@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:xillafit_flutter/core/config/app_links.dart';
 import 'package:xillafit_flutter/features/catalog/data/category_model.dart';
 import 'package:xillafit_flutter/features/catalog/data/clothing_item_model.dart';
 import 'package:xillafit_flutter/features/catalog/presentation/catalog_providers.dart';
 import 'package:xillafit_flutter/features/cart/presentation/cart_provider.dart';
+import 'package:xillafit_flutter/screens/mobile_webview_screen.dart';
+import 'package:xillafit_flutter/screens/payment_submission_screen.dart';
 import 'package:xillafit_flutter/screens/product_detail_screen.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
 
@@ -398,7 +399,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: quick.length + 1,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        separatorBuilder: (_, _) => const SizedBox(width: 12),
         itemBuilder: (context, index) {
           if (index == 0) {
             return _categoryBubble(
@@ -564,7 +565,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   fit: BoxFit.cover,
                                   width: double.infinity,
                                   height: double.infinity,
-                                  errorBuilder: (_, __, ___) => const Icon(
+                                  errorBuilder: (_, _, _) => const Icon(
                                     Icons.checkroom_rounded,
                                     size: 42,
                                     color: Color(0xFFB6BCC5),
@@ -746,14 +747,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return 'Collection';
   }
 
-  String _modelLabel(ClothingItemModel item) {
-    final modelUrl = (item.modelFileUrl ?? '').toLowerCase();
-    if (modelUrl.contains('hoodie')) return 'Hoodie';
-    if (modelUrl.contains('polo')) return 'Polo';
-    if (modelUrl.contains('tank')) return 'Tank';
-    return 'Shirt';
-  }
-
   IconData _categoryIcon(String name) {
     final text = name.toLowerCase();
     if (text.contains('hood')) return Icons.dry_cleaning_outlined;
@@ -795,12 +788,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _openCustomizationWeb() async {
-    final uri = Uri.parse(AppLinks.customizeUrl);
-    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!launched && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open customization website.')),
-      );
+    final result = await Navigator.of(context).push<Map<String, dynamic>>(
+      MaterialPageRoute(
+        builder: (_) => const MobileWebViewScreen(
+          title: '3D Customizer',
+          initialUrl: AppLinks.customizeUrl,
+          mode: MobileWebViewMode.customizer,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (result != null && result.isNotEmpty) {
+      final design = CustomDesignDraft.fromCustomizerResult(result);
+      if (design.designId.isNotEmpty) {
+        await Navigator.pushNamed(
+          context,
+          PaymentSubmissionScreen.routeName,
+          arguments: PaymentSubmissionArgs.customDesign(design: design),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Design synced back to the app.')),
+        );
+      }
     }
   }
 }

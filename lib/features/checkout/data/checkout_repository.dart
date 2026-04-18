@@ -72,6 +72,86 @@ class CheckoutLineItem {
   }
 }
 
+class CustomDesignDraft {
+  const CustomDesignDraft({
+    required this.designId,
+    required this.name,
+    required this.garmentType,
+    this.color,
+    this.logoUrl,
+    this.textureUrl,
+    this.previewImage,
+    this.backPreviewImage,
+    this.sizeLabel,
+    this.productId,
+    this.isLogoTexture = false,
+    this.isFullTexture = false,
+    this.layers = const <Map<String, dynamic>>[],
+    this.shirtDetails = const <String, dynamic>{},
+  });
+
+  final String designId;
+  final String name;
+  final String garmentType;
+  final String? color;
+  final String? logoUrl;
+  final String? textureUrl;
+  final String? previewImage;
+  final String? backPreviewImage;
+  final String? sizeLabel;
+  final String? productId;
+  final bool isLogoTexture;
+  final bool isFullTexture;
+  final List<Map<String, dynamic>> layers;
+  final Map<String, dynamic> shirtDetails;
+
+  factory CustomDesignDraft.fromCustomizerResult(Map<String, dynamic> map) {
+    final rawLayers = map['layers'];
+    return CustomDesignDraft(
+      designId: map['designId']?.toString() ?? map['design']?.toString() ?? '',
+      name: map['name']?.toString() ?? 'Custom Design',
+      garmentType: map['garmentType']?.toString() ?? 'shirt',
+      color: map['color']?.toString(),
+      logoUrl: map['logoUrl']?.toString(),
+      textureUrl: map['textureUrl']?.toString(),
+      previewImage: map['previewImage']?.toString(),
+      backPreviewImage: map['backPreviewImage']?.toString(),
+      sizeLabel: map['sizeLabel']?.toString(),
+      productId: map['productId']?.toString(),
+      isLogoTexture: map['isLogoTexture'] == true || map['isLogoTexture']?.toString() == 'true',
+      isFullTexture: map['isFullTexture'] == true || map['isFullTexture']?.toString() == 'true',
+      layers: rawLayers is List
+          ? rawLayers
+              .whereType<Map>()
+              .map((entry) => Map<String, dynamic>.from(entry))
+              .toList()
+          : const <Map<String, dynamic>>[],
+      shirtDetails: map['shirtDetails'] is Map
+          ? Map<String, dynamic>.from(map['shirtDetails'] as Map)
+          : const <String, dynamic>{},
+    );
+  }
+
+  Map<String, dynamic> toApiDesignData() {
+    return {
+      'id': designId,
+      'name': name,
+      'description': 'Saved from mobile customizer',
+      if ((color ?? '').trim().isNotEmpty) 'color': color,
+      if ((previewImage ?? '').trim().isNotEmpty) 'previewImage': previewImage,
+      if ((backPreviewImage ?? '').trim().isNotEmpty)
+        'backPreviewImage': backPreviewImage,
+      if ((textureUrl ?? '').trim().isNotEmpty) 'textureUrl': textureUrl,
+      'isLogoTexture': isLogoTexture,
+      'isFullTexture': isFullTexture,
+      'shirtDetails': shirtDetails,
+      'layers': layers,
+      if ((logoUrl ?? '').trim().isNotEmpty) 'logoUrl': logoUrl,
+      'garmentType': garmentType,
+    };
+  }
+}
+
 class CheckoutSessionResult {
   const CheckoutSessionResult({
     required this.checkoutUrl,
@@ -160,6 +240,65 @@ class CheckoutRepository {
           'method': deliveryOption,
         },
         'isDeposit': isDeposit,
+      },
+    );
+
+    return CheckoutSessionResult.fromMap(Map<String, dynamic>.from(data as Map));
+  }
+
+  Future<CheckoutSessionResult> createCustomCheckoutSession({
+    required CustomDesignDraft design,
+    required String profileId,
+    required Map<String, int> quantities,
+    required String fabric,
+    required String referenceId,
+    required double grandTotal,
+    required double amountDueNow,
+    required String successUrl,
+    required String cancelUrl,
+    required String orderType,
+    required String address,
+    required String billingName,
+    required String billingEmail,
+    String? billingPhone,
+    required String city,
+    required String postalCode,
+    required String streetAddress,
+    String? zoneId,
+    String? instructions,
+  }) async {
+    final data = await _api.post(
+      '/payments/checkout-custom',
+      body: {
+        'amount': amountDueNow,
+        'description': '50% Deposit for Custom Design #$referenceId',
+        'successUrl': successUrl,
+        'cancelUrl': cancelUrl,
+        'referenceId': referenceId,
+        'profileId': profileId,
+        'designData': design.toApiDesignData(),
+        'quantities': quantities,
+        'orderForm': {
+          'address': address,
+          'orderType': orderType,
+          if ((zoneId ?? '').trim().isNotEmpty) 'zoneId': zoneId,
+          if ((instructions ?? '').trim().isNotEmpty)
+            'instructions': instructions!.trim(),
+        },
+        'grandTotal': grandTotal,
+        'fabric': fabric,
+        'billing': {
+          'name': billingName,
+          'email': billingEmail,
+          if ((billingPhone ?? '').trim().isNotEmpty) 'phone': billingPhone,
+          'address': {
+            'line1': streetAddress,
+            'city': city,
+            'state': 'Bulacan',
+            'postal_code': postalCode,
+            'country': 'PH',
+          },
+        },
       },
     );
 

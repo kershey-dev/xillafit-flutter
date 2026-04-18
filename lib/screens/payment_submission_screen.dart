@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:xillafit_flutter/core/config/app_links.dart';
 import 'package:xillafit_flutter/core/payments/payment_session_store.dart';
 import 'package:xillafit_flutter/features/auth/data/bulacan_locations.dart';
@@ -9,6 +8,7 @@ import 'package:xillafit_flutter/features/cart/presentation/cart_provider.dart';
 import 'package:xillafit_flutter/features/catalog/data/clothing_item_model.dart';
 import 'package:xillafit_flutter/features/checkout/data/checkout_repository.dart';
 import 'package:xillafit_flutter/features/profile/presentation/profile_providers.dart';
+import 'package:xillafit_flutter/screens/mobile_webview_screen.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
 import 'package:xillafit_flutter/widgets/common/app_card.dart';
 import 'package:xillafit_flutter/widgets/common/primary_button.dart';
@@ -20,9 +20,11 @@ enum _DeliveryOption { delivery, pickup }
 class PaymentSubmissionArgs {
   const PaymentSubmissionArgs({
     this.directItems,
+    this.customDesign,
   });
 
   final List<CheckoutLineItem>? directItems;
+  final CustomDesignDraft? customDesign;
 
   factory PaymentSubmissionArgs.singleItem({
     required ClothingItemModel item,
@@ -43,6 +45,12 @@ class PaymentSubmissionArgs {
       ],
     );
   }
+
+  factory PaymentSubmissionArgs.customDesign({
+    required CustomDesignDraft design,
+  }) {
+    return PaymentSubmissionArgs(customDesign: design);
+  }
 }
 
 class PaymentSubmissionScreen extends ConsumerStatefulWidget {
@@ -59,9 +67,26 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
   _DeliveryOption _deliveryOption = _DeliveryOption.delivery;
   bool _loading = true;
   bool _submitting = false;
+  bool _waitingForPaymentReturn = false;
   String? _error;
   String? _estimateDate;
   List<DeliveryZone> _zones = const [];
+  final Map<String, int> _customQuantities = {
+    'S': 0,
+    'M': 0,
+    'L': 0,
+    'XL': 0,
+    '2XL': 0,
+  };
+  final _customInstructionsController = TextEditingController();
+  final _customFabricOptions = const [
+    'Cotton 100%',
+    'Poly-Cotton Blend',
+    'Dri-Fit Polyester',
+    'Premium CVC',
+    'Fleece (hoodie)',
+  ];
+  String _customFabric = 'Cotton 100%';
 
   final _streetController = TextEditingController();
   String _selectedMunicipality = '';
@@ -77,6 +102,7 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
   @override
   void dispose() {
     _streetController.dispose();
+    _customInstructionsController.dispose();
     super.dispose();
   }
 
@@ -143,6 +169,28 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
     ];
   }
 
+  PaymentSubmissionArgs? _screenArgs() {
+    final args = ModalRoute.of(context)?.settings.arguments;
+    return args is PaymentSubmissionArgs ? args : null;
+  }
+
+  CustomDesignDraft? _customDesign() {
+    return _screenArgs()?.customDesign;
+  }
+
+  bool get _isCustomDesignFlow => _customDesign() != null;
+
+  int get _customTotalPieces {
+    return _customQuantities.values.fold<int>(0, (sum, qty) => sum + qty);
+  }
+
+  void _changeCustomQuantity(String size, int delta) {
+    setState(() {
+      final current = _customQuantities[size] ?? 0;
+      _customQuantities[size] = (current + delta).clamp(0, 999);
+    });
+  }
+
   double _deliveryFeeFor(String municipality) {
     if (_deliveryOption == _DeliveryOption.pickup) return 0;
     for (final zone in _zones) {
@@ -154,6 +202,11 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
   }
 
   Future<void> _submitCheckout(List<CheckoutLineItem> items) async {
+    if (_isCustomDesignFlow) {
+      await _submitCustomCheckout();
+      return;
+    }
+
     if (items.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Your checkout is empty.')),
@@ -207,12 +260,12 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
             referenceId: referenceId,
             items: items,
             profileId: user.id,
-            successUrl: AppLinks.paymentBridgeUrl(
+            successUrl: AppLinks.paymentCallbackUrl(
               success: true,
               flow: 'checkout',
               referenceId: referenceId,
             ),
-            cancelUrl: AppLinks.paymentBridgeUrl(
+            cancelUrl: AppLinks.paymentCallbackUrl(
               success: false,
               flow: 'checkout',
               referenceId: referenceId,
@@ -240,15 +293,17 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
         );
       }
 
-      final uri = Uri.parse(result.checkoutUrl);
-      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!launched) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open the payment page.')),
-        );
-        await PaymentSessionStore.clear();
-      }
+      if (!mounted) return;
+      setState(() => _waitingForPaymentReturn = true);
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => MobileWebViewScreen(
+            title: 'Secure Checkout',
+            initialUrl: result.checkoutUrl,
+            mode: MobileWebViewMode.payment,
+          ),
+        ),
+      );
     } catch (error) {
       await PaymentSessionStore.clear();
       if (!mounted) return;
@@ -258,7 +313,141 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
       );
     } finally {
       if (mounted) {
-        setState(() => _submitting = false);
+        setState(() {
+          _submitting = false;
+          _waitingForPaymentReturn = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _submitCustomCheckout() async {
+    final design = _customDesign();
+    if (design == null) return;
+
+    if (_customTotalPieces <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add at least one size quantity for your custom design.')),
+      );
+      return;
+    }
+
+    if (_deliveryOption == _DeliveryOption.delivery) {
+      if (_streetController.text.trim().isEmpty ||
+          _selectedMunicipality.isEmpty ||
+          _selectedBarangay.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Complete your delivery address first.')),
+        );
+        return;
+      }
+    }
+
+    final session = ref.read(authSessionProvider).asData?.value;
+    final profile = ref.read(currentProfileProvider).asData?.value;
+    final user = session?.user;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please sign in again.')),
+      );
+      return;
+    }
+
+    final deliveryFee = _deliveryFeeFor(_selectedMunicipality);
+    final itemsTotal = _customTotalPieces * 350.0;
+    final grandTotal = itemsTotal + deliveryFee;
+    final amountDueNow = grandTotal * 0.5;
+    final referenceId = 'XF-CUSTOM-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+    final checkoutCity =
+        _deliveryOption == _DeliveryOption.pickup ? 'Marilao' : _selectedMunicipality;
+    final checkoutZipCode =
+        _deliveryOption == _DeliveryOption.pickup ? '3019' : _zipCode;
+    final checkoutStreet = _deliveryOption == _DeliveryOption.pickup
+        ? '3620 MacArthur Hwy, Marilao, Bulacan'
+        : _streetController.text.trim();
+    DeliveryZone? selectedZone;
+    for (final zone in _zones) {
+      if (zone.zoneName.toLowerCase() == _selectedMunicipality.toLowerCase()) {
+        selectedZone = zone;
+        break;
+      }
+    }
+
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+
+    try {
+      final result = await ref.read(checkoutRepositoryProvider).createCustomCheckoutSession(
+            design: design,
+            profileId: user.id,
+            quantities: {
+              for (final entry in _customQuantities.entries)
+                if (entry.value > 0) entry.key: entry.value,
+            },
+            fabric: _customFabric,
+            referenceId: referenceId,
+            grandTotal: grandTotal,
+            amountDueNow: amountDueNow,
+            successUrl: AppLinks.paymentCallbackUrl(
+              success: true,
+              flow: 'custom',
+              referenceId: referenceId,
+            ),
+            cancelUrl: AppLinks.paymentCallbackUrl(
+              success: false,
+              flow: 'custom',
+              referenceId: referenceId,
+            ),
+            orderType: _deliveryOption == _DeliveryOption.delivery ? 'Delivery' : 'Pickup',
+            address: _deliveryOption == _DeliveryOption.delivery
+                ? '${_streetController.text.trim()}, $_selectedBarangay, $_selectedMunicipality, Bulacan $_zipCode'
+                : 'Pick up at Bulacan Hub (3620 MacArthur Hwy, Marilao, Bulacan)',
+            billingName: (profile?.fullName ?? user.userMetadata?['full_name']?.toString() ?? 'Guest User').trim(),
+            billingEmail: (profile?.email ?? user.email ?? '').trim(),
+            billingPhone: _normalizePhone(profile?.contactNumber?.toString()),
+            city: checkoutCity,
+            postalCode: checkoutZipCode,
+            streetAddress: checkoutStreet,
+            zoneId: selectedZone?.id,
+            instructions: _customInstructionsController.text.trim(),
+          );
+
+      if ((result.sessionId ?? '').trim().isNotEmpty) {
+        await PaymentSessionStore.save(
+          PendingPaymentSession(
+            sessionId: result.sessionId!,
+            flow: 'custom',
+            referenceId: referenceId,
+          ),
+        );
+      }
+
+      if (!mounted) return;
+      setState(() => _waitingForPaymentReturn = true);
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => MobileWebViewScreen(
+            title: 'Secure Checkout',
+            initialUrl: result.checkoutUrl,
+            mode: MobileWebViewMode.payment,
+          ),
+        ),
+      );
+    } catch (error) {
+      await PaymentSessionStore.clear();
+      if (!mounted) return;
+      setState(() => _error = error.toString());
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString())),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _submitting = false;
+          _waitingForPaymentReturn = false;
+        });
       }
     }
   }
@@ -275,10 +464,17 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
   @override
   Widget build(BuildContext context) {
     final items = _resolveItems();
-    final itemsTotal = items.fold<double>(0, (sum, item) => sum + item.subtotal);
+    final customDesign = _customDesign();
+    final itemsTotal = _isCustomDesignFlow
+        ? _customTotalPieces * 350.0
+        : items.fold<double>(0, (sum, item) => sum + item.subtotal);
     final deliveryFee = _deliveryFeeFor(_selectedMunicipality);
     final grandTotal = itemsTotal + deliveryFee;
-    final amountDueNow = _paymentType == _PaymentType.full ? grandTotal : grandTotal * 0.5;
+    final amountDueNow = _isCustomDesignFlow
+        ? grandTotal * 0.5
+        : _paymentType == _PaymentType.full
+            ? grandTotal
+            : grandTotal * 0.5;
     final remainingBalance = grandTotal - amountDueNow;
     final municipality = _municipalityByName(_selectedMunicipality);
     final municipalityValue = municipality?.name;
@@ -298,7 +494,7 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
-          : items.isEmpty
+          : !_isCustomDesignFlow && items.isEmpty
               ? Center(
                   child: Padding(
                     padding: const EdgeInsets.all(24),
@@ -348,7 +544,7 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
                             ),
                             const SizedBox(height: 6),
                             Text(
-                              _paymentType == _PaymentType.deposit
+                              _isCustomDesignFlow || _paymentType == _PaymentType.deposit
                                   ? '50% downpayment for your order'
                                   : 'Full payment for your order',
                               style: AppTextStyles.caption,
@@ -357,6 +553,101 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
                         ),
                       ),
                       const SizedBox(height: 14),
+                      if (_isCustomDesignFlow && customDesign != null) ...[
+                        AppCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Custom design', style: AppTextStyles.heading),
+                              const SizedBox(height: 14),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    width: 84,
+                                    height: 84,
+                                    clipBehavior: Clip.antiAlias,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF5F5F5),
+                                      borderRadius: BorderRadius.circular(18),
+                                    ),
+                                    child: (customDesign.previewImage ?? '').isNotEmpty
+                                        ? Image.network(
+                                            customDesign.previewImage!,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, _, _) => const Icon(Icons.style_rounded),
+                                          )
+                                        : const Icon(Icons.style_rounded, size: 32),
+                                  ),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          customDesign.name,
+                                          style: AppTextStyles.body.copyWith(fontWeight: FontWeight.w800),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          'Garment: ${customDesign.garmentType}',
+                                          style: AppTextStyles.caption,
+                                        ),
+                                        if ((customDesign.sizeLabel ?? '').isNotEmpty)
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 4),
+                                            child: Text(
+                                              'Suggested size: ${customDesign.sizeLabel}',
+                                              style: AppTextStyles.caption,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 14),
+                              _FieldLabel('Fabric / Material'),
+                              DropdownButtonFormField<String>(
+                                initialValue: _customFabric,
+                                items: [
+                                  for (final fabric in _customFabricOptions)
+                                    DropdownMenuItem<String>(
+                                      value: fabric,
+                                      child: Text(fabric),
+                                    ),
+                                ],
+                                decoration: _inputDecoration('Choose material'),
+                                onChanged: (value) {
+                                  if (value == null) return;
+                                  setState(() => _customFabric = value);
+                                },
+                              ),
+                              const SizedBox(height: 12),
+                              _FieldLabel('Size quantities'),
+                              for (final size in _customQuantities.keys) ...[
+                                _CustomSizeRow(
+                                  size: size,
+                                  quantity: _customQuantities[size] ?? 0,
+                                  onDecrease: () => _changeCustomQuantity(size, -1),
+                                  onIncrease: () => _changeCustomQuantity(size, 1),
+                                ),
+                                const SizedBox(height: 8),
+                              ],
+                              const SizedBox(height: 4),
+                              _FieldLabel('Design / Production Notes'),
+                              TextField(
+                                controller: _customInstructionsController,
+                                maxLines: 3,
+                                decoration: _inputDecoration(
+                                  'Optional notes for print placement, roster, or production details',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                      ],
                       AppCard(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -493,19 +784,28 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
                           children: [
                             Text('Payment strategy', style: AppTextStyles.heading),
                             const SizedBox(height: 12),
-                            _ChoiceTile(
-                              label: '50% Deposit',
-                              subtitle: 'Pay half now, settle the rest later',
-                              active: _paymentType == _PaymentType.deposit,
-                              onTap: () => setState(() => _paymentType = _PaymentType.deposit),
-                            ),
-                            const SizedBox(height: 10),
-                            _ChoiceTile(
-                              label: 'Full Payment',
-                              subtitle: 'Pay the entire order now',
-                              active: _paymentType == _PaymentType.full,
-                              onTap: () => setState(() => _paymentType = _PaymentType.full),
-                            ),
+                            if (_isCustomDesignFlow)
+                              _ChoiceTile(
+                                label: '50% Deposit',
+                                subtitle: 'Custom orders currently start with a 50% deposit',
+                                active: true,
+                                onTap: () {},
+                              )
+                            else ...[
+                              _ChoiceTile(
+                                label: '50% Deposit',
+                                subtitle: 'Pay half now, settle the rest later',
+                                active: _paymentType == _PaymentType.deposit,
+                                onTap: () => setState(() => _paymentType = _PaymentType.deposit),
+                              ),
+                              const SizedBox(height: 10),
+                              _ChoiceTile(
+                                label: 'Full Payment',
+                                subtitle: 'Pay the entire order now',
+                                active: _paymentType == _PaymentType.full,
+                                onTap: () => setState(() => _paymentType = _PaymentType.full),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -516,22 +816,32 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
                           children: [
                             Text('Order summary', style: AppTextStyles.heading),
                             const SizedBox(height: 14),
-                            for (final item in items) ...[
-                              _CheckoutItemTile(item: item),
+                            if (_isCustomDesignFlow && customDesign != null) ...[
+                              _CustomDesignSummaryTile(
+                                design: customDesign,
+                                totalPieces: _customTotalPieces,
+                                fabric: _customFabric,
+                              ),
                               const SizedBox(height: 10),
-                            ],
+                            ] else
+                              for (final item in items) ...[
+                                _CheckoutItemTile(item: item),
+                                const SizedBox(height: 10),
+                              ],
                             const Divider(),
                             _SummaryRow(label: 'Subtotal', value: 'PHP ${itemsTotal.toStringAsFixed(0)}'),
                             _SummaryRow(label: 'Delivery fee', value: 'PHP ${deliveryFee.toStringAsFixed(0)}'),
                             _SummaryRow(label: 'Order total', value: 'PHP ${grandTotal.toStringAsFixed(0)}', strong: true),
                             const SizedBox(height: 6),
                             _SummaryRow(
-                              label: _paymentType == _PaymentType.deposit ? 'Due now' : 'Pay now',
+                              label: _isCustomDesignFlow || _paymentType == _PaymentType.deposit
+                                  ? 'Due now'
+                                  : 'Pay now',
                               value: 'PHP ${amountDueNow.toStringAsFixed(0)}',
                               strong: true,
                               accent: true,
                             ),
-                            if (_paymentType == _PaymentType.deposit)
+                            if (_isCustomDesignFlow || _paymentType == _PaymentType.deposit)
                               _SummaryRow(
                                 label: 'Remaining balance',
                                 value: 'PHP ${remainingBalance.toStringAsFixed(0)}',
@@ -558,16 +868,31 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
                       ],
                       const SizedBox(height: 16),
                       PrimaryButton(
-                        text: _submitting ? 'Opening secure checkout...' : 'Proceed to Pay',
-                        isLoading: _submitting,
-                        onPressed: _submitting ? null : () => _submitCheckout(items),
+                        text: _submitting
+                            ? 'Preparing checkout...'
+                            : _waitingForPaymentReturn
+                                ? 'Waiting for payment confirmation...'
+                                : 'Proceed to Pay',
+                        isLoading: _submitting || _waitingForPaymentReturn,
+                        onPressed: _submitting || _waitingForPaymentReturn
+                            ? null
+                            : () => _submitCheckout(items),
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        'This opens the secure XillFit payment page in your browser.',
+                        'Payment now stays inside the app and returns here automatically.',
                         textAlign: TextAlign.center,
                         style: AppTextStyles.caption,
                       ),
+                      if (_isCustomDesignFlow)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            'Custom design checkout uses the backend custom-order flow and returns here automatically after PayMongo.',
+                            textAlign: TextAlign.center,
+                            style: AppTextStyles.caption,
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -749,6 +1074,111 @@ class _CheckoutItemTile extends StatelessWidget {
         ),
         Text(
           'PHP ${item.subtotal.toStringAsFixed(0)}',
+          style: AppTextStyles.body.copyWith(fontWeight: FontWeight.w800),
+        ),
+      ],
+    );
+  }
+}
+
+class _CustomSizeRow extends StatelessWidget {
+  const _CustomSizeRow({
+    required this.size,
+    required this.quantity,
+    required this.onDecrease,
+    required this.onIncrease,
+  });
+
+  final String size;
+  final int quantity;
+  final VoidCallback onDecrease;
+  final VoidCallback onIncrease;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              size,
+              style: AppTextStyles.body.copyWith(fontWeight: FontWeight.w800),
+            ),
+          ),
+          IconButton(
+            onPressed: onDecrease,
+            icon: const Icon(Icons.remove_circle_outline_rounded),
+          ),
+          Text(
+            '$quantity',
+            style: AppTextStyles.body.copyWith(fontWeight: FontWeight.w800),
+          ),
+          IconButton(
+            onPressed: onIncrease,
+            icon: const Icon(Icons.add_circle_outline_rounded),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CustomDesignSummaryTile extends StatelessWidget {
+  const _CustomDesignSummaryTile({
+    required this.design,
+    required this.totalPieces,
+    required this.fabric,
+  });
+
+  final CustomDesignDraft design;
+  final int totalPieces;
+  final String fabric;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 56,
+          height: 56,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: const Color(0xFFF5F5F5),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: (design.previewImage ?? '').isNotEmpty
+              ? Image.network(
+                  design.previewImage!,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const Icon(Icons.style_rounded),
+                )
+              : const Icon(Icons.style_rounded),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                design.name,
+                style: AppTextStyles.body.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '$totalPieces pcs • $fabric',
+                style: AppTextStyles.caption,
+              ),
+            ],
+          ),
+        ),
+        Text(
+          'PHP ${(totalPieces * 350).toStringAsFixed(0)}',
           style: AppTextStyles.body.copyWith(fontWeight: FontWeight.w800),
         ),
       ],
