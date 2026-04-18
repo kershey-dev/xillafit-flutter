@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:xillafit_flutter/core/config/app_links.dart';
+import 'package:xillafit_flutter/features/checkout/data/checkout_repository.dart';
 import 'package:xillafit_flutter/core/links/mobile_link_handler.dart';
+import 'package:xillafit_flutter/screens/payment_submission_screen.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
 
 enum MobileWebViewMode { customizer, payment }
@@ -18,12 +20,14 @@ class MobileWebViewScreen extends StatefulWidget {
     required this.initialUrl,
     required this.mode,
     this.productId,
+    this.popOnCustomizerSave = true,
   });
 
   final String title;
   final String initialUrl;
   final MobileWebViewMode mode;
   final String? productId;
+  final bool popOnCustomizerSave;
 
   @override
   State<MobileWebViewScreen> createState() => _MobileWebViewScreenState();
@@ -95,6 +99,8 @@ class _MobileWebViewScreenState extends State<MobileWebViewScreen> {
     final query = <String, String>{
       ...baseUri.queryParameters,
       'mobile': '1',
+      'embedded': '1',
+      'app_mode': 'embedded',
       'platform': _platformLabel,
       'auth_bridge': AppLinks.authCallbackUrl(),
     };
@@ -105,6 +111,9 @@ class _MobileWebViewScreenState extends State<MobileWebViewScreen> {
         saved: true,
         productId: widget.productId,
       );
+    }
+    if ((widget.productId ?? '').trim().isNotEmpty) {
+      query['productId'] = widget.productId!.trim();
     }
 
     final requestUri = baseUri.replace(queryParameters: query);
@@ -322,7 +331,51 @@ class _MobileWebViewScreenState extends State<MobileWebViewScreen> {
       return NavigationDecision.prevent;
     }
 
+    if (widget.mode == MobileWebViewMode.customizer &&
+        !_isAllowedCustomizerNavigation(uri)) {
+      _showBlockedRouteMessage();
+      return NavigationDecision.prevent;
+    }
+
     return NavigationDecision.navigate;
+  }
+
+  bool _isAllowedCustomizerNavigation(Uri uri) {
+    if (uri.scheme == 'about' || uri.scheme == 'data' || uri.scheme == 'javascript') {
+      return true;
+    }
+
+    if (uri.scheme == AppLinks.mobileScheme) {
+      return uri.host == AppLinks.customizerHost ||
+          uri.host == AppLinks.authHost ||
+          uri.host == AppLinks.paymentHost;
+    }
+
+    final initialUri = Uri.parse(widget.initialUrl);
+    final siteUri = Uri.parse(AppLinks.siteUrl);
+    final allowedHosts = <String>{initialUri.host, siteUri.host};
+
+    if (!allowedHosts.contains(uri.host)) {
+      return false;
+    }
+
+    final path = uri.path.toLowerCase();
+    final initialPath = initialUri.path.toLowerCase();
+    return path == initialPath ||
+        path.startsWith('$initialPath/') ||
+        path == AppLinks.authBridgePath ||
+        path == AppLinks.paymentBridgePath;
+  }
+
+  void _showBlockedRouteMessage() {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('This mobile flow only allows the embedded customizer.'),
+      ),
+    );
   }
 
   Future<void> _handleMobileUri(Uri uri) async {
@@ -351,11 +404,35 @@ class _MobileWebViewScreenState extends State<MobileWebViewScreen> {
   }
 
   void _completeCustomizerFromUri(Uri uri) {
-    if (!mounted) return;
-    Navigator.of(context).pop<Map<String, dynamic>>({
+    _handleCustomizerResult({
       ...uri.queryParameters,
       'saved': uri.queryParameters['saved'] ?? 'true',
     });
+  }
+
+  Future<void> _handleCustomizerResult(Map<String, dynamic> payload) async {
+    if (!mounted) return;
+
+    final navigator = Navigator.of(context);
+    if (widget.popOnCustomizerSave && navigator.canPop()) {
+      navigator.pop<Map<String, dynamic>>(payload);
+      return;
+    }
+
+    final design = CustomDesignDraft.fromCustomizerResult(payload);
+    if (design.designId.isEmpty) {
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Design synced back to the app.')),
+      );
+      return;
+    }
+
+    await navigator.pushNamed(
+      PaymentSubmissionScreen.routeName,
+      arguments: PaymentSubmissionArgs.customDesign(design: design),
+    );
   }
 
   void _handleBridgeMessage(JavaScriptMessage message) {
@@ -364,9 +441,10 @@ class _MobileWebViewScreenState extends State<MobileWebViewScreen> {
       if (decoded is! Map<String, dynamic>) return;
       final type = decoded['type']?.toString();
       if (type == 'designSaved' || type == 'design_saved') {
-        if (!mounted) return;
-        Navigator.of(context).pop<Map<String, dynamic>>(
-          Map<String, dynamic>.from(decoded['payload'] as Map? ?? const {}),
+        unawaited(
+          _handleCustomizerResult(
+            Map<String, dynamic>.from(decoded['payload'] as Map? ?? const {}),
+          ),
         );
       } else if (type == 'auth') {
         final payload = Map<String, dynamic>.from(decoded['payload'] as Map? ?? const {});
