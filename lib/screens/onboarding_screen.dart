@@ -12,125 +12,131 @@ class OnboardingScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
-    final heroHeight = size.height * 0.64;
+    final shortScreen = size.height < 760;
+    final heroHeight = size.height * (shortScreen ? 0.56 : 0.64);
+    final titleSize = shortScreen ? 38.0 : 44.0;
+    final titleOffset = shortScreen ? -10.0 : -18.0;
+    final bottomPadding = shortScreen ? 18.0 : 24.0;
+    final buttonGap = shortScreen ? 10.0 : 12.0;
 
     return Scaffold(
       backgroundColor: const Color(0xFFFAFAFA),
-      body: Column(
-        children: [
-          SizedBox(
-            height: heroHeight,
-            width: double.infinity,
-            child: Stack(
-              fit: StackFit.expand,
+      body: SafeArea(
+        bottom: false,
+        child: SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: size.height),
+            child: Column(
               children: [
-                Image.asset(
-                  'assets/images/xillfit-hero-bg.png',
-                  fit: BoxFit.cover,
-                  alignment: const Alignment(0.38, 0),
-                ),
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withValues(alpha: 0.06),
-                        Colors.transparent,
-                        Colors.white.withValues(alpha: 0.28),
-                        const Color(0xFFFAFAFA),
-                      ],
-                      stops: const [0, 0.45, 0.76, 1],
-                    ),
-                  ),
-                ),
-                SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 18, 24, 0),
-                    child: Align(
-                      alignment: Alignment.topLeft,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 8,
-                        ),
+                SizedBox(
+                  height: heroHeight,
+                  width: double.infinity,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.asset(
+                        'assets/images/xillfit-hero-bg.png',
+                        fit: BoxFit.cover,
+                        alignment: const Alignment(0.38, 0),
+                      ),
+                      DecoratedBox(
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.90),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          'XILLAFIT',
-                          style: AppTextStyles.label.copyWith(
-                            color: AppColors.goldDark,
-                            letterSpacing: 2.4,
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.black.withValues(alpha: 0.06),
+                              Colors.transparent,
+                              Colors.white.withValues(alpha: 0.28),
+                              const Color(0xFFFAFAFA),
+                            ],
+                            stops: const [0, 0.45, 0.76, 1],
                           ),
                         ),
                       ),
-                    ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 18, 24, 0),
+                        child: Align(
+                          alignment: Alignment.topLeft,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.90),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              'XILLAFIT',
+                              style: AppTextStyles.label.copyWith(
+                                color: AppColors.goldDark,
+                                letterSpacing: 2.4,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(24, 0, 24, bottomPadding),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Transform.translate(
+                        offset: Offset(0, titleOffset),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "Let's get started",
+                              style: AppTextStyles.body.copyWith(
+                                fontSize: titleSize,
+                                height: 0.94,
+                                fontWeight: FontWeight.w900,
+                                color: AppColors.text,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              'Everything starts from here. Browse products, explore real previews, and continue into your account.',
+                              style: AppTextStyles.body.copyWith(
+                                color: const Color(0xFF4B5563),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                height: 1.45,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      SizedBox(height: shortScreen ? 18 : 24),
+                      _ActionButton(
+                        label: 'Log in',
+                        backgroundColor: AppColors.gold,
+                        foregroundColor: AppColors.text,
+                        onPressed: () {
+                          Navigator.pushNamed(context, LoginScreen.routeName);
+                        },
+                      ),
+                      SizedBox(height: buttonGap),
+                      _ActionButton(
+                        label: 'Sign up',
+                        backgroundColor: const Color(0xFF1B1B2F),
+                        foregroundColor: Colors.white,
+                        onPressed: () {
+                          Navigator.pushNamed(context, RegisterScreen.routeName);
+                        },
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
-          Expanded(
-            child: SafeArea(
-              top: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Transform.translate(
-                      offset: const Offset(0, -18),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                    Text(
-                      "Let's get started",
-                      style: AppTextStyles.body.copyWith(
-                        fontSize: 44,
-                        height: 0.94,
-                        fontWeight: FontWeight.w900,
-                        color: AppColors.text,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Everything starts from here. Browse products, explore real previews, and continue into your account.',
-                      style: AppTextStyles.body.copyWith(
-                        color: const Color(0xFF4B5563),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        height: 1.45,
-                      ),
-                    ),
-                        ],
-                      ),
-                    ),
-                    const Spacer(),
-                    _ActionButton(
-                      label: 'Log in',
-                      backgroundColor: AppColors.gold,
-                      foregroundColor: AppColors.text,
-                      onPressed: () {
-                        Navigator.pushNamed(context, LoginScreen.routeName);
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    _ActionButton(
-                      label: 'Sign up',
-                      backgroundColor: const Color(0xFF1B1B2F),
-                      foregroundColor: Colors.white,
-                      onPressed: () {
-                        Navigator.pushNamed(context, RegisterScreen.routeName);
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

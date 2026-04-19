@@ -106,7 +106,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   String? _validatePassword(String v) {
     if (v.isEmpty) return 'Password is required';
-    if (v.length < 6) return 'Password must be at least 6 characters';
+    if (v.length < 8) return 'Password must be at least 8 characters';
+    if (!RegExp(r'[A-Z]').hasMatch(v)) {
+      return 'Password must include at least one uppercase letter';
+    }
+    if (!RegExp(r'[a-z]').hasMatch(v)) {
+      return 'Password must include at least one lowercase letter';
+    }
+    if (!RegExp(r'\d').hasMatch(v)) {
+      return 'Password must include at least one number';
+    }
     return null;
   }
 
@@ -127,6 +136,39 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (_tab != AuthTab.register) return null;
     if (v.trim().isEmpty) return 'Street / House No. is required';
     return null;
+  }
+
+  bool _hasStepOneValidationIssues({
+    required String? emailErr,
+    required String? passErr,
+    required String? confirmPasswordErr,
+  }) {
+    return emailErr != null || passErr != null || confirmPasswordErr != null;
+  }
+
+  void _moveToRegisterStepOneForErrors() {
+    if (_tab != AuthTab.register) return;
+    if (_registerStep != 1) {
+      _registerStep = 1;
+    }
+  }
+
+  String _friendlyRegisterErrorMessage(AuthException error) {
+    final message = error.message.trim();
+    final lower = message.toLowerCase();
+
+    if (lower.contains('already registered') ||
+        lower.contains('already been registered') ||
+        lower.contains('user already registered') ||
+        lower.contains('already exists')) {
+      return 'That email is already registered. Please sign in instead.';
+    }
+
+    if (lower.contains('password')) {
+      return 'Your password does not meet the required format.';
+    }
+
+    return message;
   }
 
   Future<void> _submit() async {
@@ -153,6 +195,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         barangayErr != null ||
         streetAddressErr != null) {
       setState(() {
+        if (_hasStepOneValidationIssues(
+          emailErr: emailErr,
+          passErr: passErr,
+          confirmPasswordErr: confirmPasswordErr,
+        )) {
+          _moveToRegisterStepOneForErrors();
+        }
         _emailError = emailErr;
         _passwordError = passErr;
         _confirmPasswordError = confirmPasswordErr;
@@ -203,7 +252,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       }
     } on AuthException catch (e) {
       if (mounted) {
-        setState(() => _formError = e.message);
+        final friendlyMessage = _friendlyRegisterErrorMessage(e);
+        final lower = friendlyMessage.toLowerCase();
+        setState(() {
+          if (_tab == AuthTab.register &&
+              (lower.contains('email') || lower.contains('password'))) {
+            _moveToRegisterStepOneForErrors();
+          }
+          if (lower.contains('already registered')) {
+            _emailError = 'That email is already registered';
+          } else if (lower.contains('password')) {
+            _passwordError = friendlyMessage;
+          }
+          _formError = friendlyMessage;
+        });
       }
     } catch (e) {
       if (mounted) {
@@ -257,9 +319,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     FocusScope.of(context).unfocus();
     _clearFieldErrors();
     final emailErr = _validateEmail(_emailController.text);
-    if (emailErr != null) {
+    final passErr = _validatePassword(_passwordController.text);
+    final confirmPasswordErr =
+        _validateConfirmPassword(_confirmPasswordController.text);
+    if (emailErr != null || passErr != null || confirmPasswordErr != null) {
       setState(() {
         _emailError = emailErr;
+        _passwordError = passErr;
+        _confirmPasswordError = confirmPasswordErr;
       });
       return;
     }
@@ -397,59 +464,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _authCard(double cardPadding, bool isRegister) {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.fromLTRB(
-        cardPadding,
-        20,
-        cardPadding,
-        28,
-      ),
-      color: AppColors.surfaceWarm,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _AuthSegmentedControl(
-            currentTab: _tab,
-            onChanged: _loading ? null : _switchTab,
-          ),
-          const SizedBox(height: 24),
-          Text(
-            isRegister ? 'Create your Account' : 'Login to your Account',
-            style: AppTextStyles.body.copyWith(
-              fontSize: 26,
-              fontWeight: FontWeight.w800,
-              color: AppColors.text,
-              height: 1.1,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            isRegister
-                ? 'Complete the steps below to create your account.'
-                : 'Sign in to continue to your XILLAFIT account.',
-            style: AppTextStyles.body.copyWith(
-              color: AppColors.muted,
-              fontSize: 13,
-              height: 1.4,
-            ),
-          ),
-          if (isRegister) ...[
-            const SizedBox(height: 16),
-            _RegisterStepHeader(step: _registerStep),
-          ],
-          const SizedBox(height: 20),
-          if (_formError != null) ...[
-            _AuthMessage(message: _formError!),
-            const SizedBox(height: AppSpacing.md),
-          ],
-          isRegister ? _buildRegisterPane() : _buildSignInPane(),
-        ],
       ),
     );
   }
@@ -680,8 +694,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               _selectedBarangay = null;
               _municipalityError = null;
               _barangayError = null;
-              });
-            },
+            });
+          },
         ),
         const SizedBox(height: 14),
         _CleanDropdownField(
@@ -703,8 +717,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             setState(() {
               _selectedBarangay = value;
               _barangayError = null;
-              });
-            },
+            });
+          },
         ),
         const SizedBox(height: 14),
         _SignInField(
@@ -760,150 +774,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
-  Widget _brandHeader(bool isRegister) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(24, 26, 24, 26),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF091726), Color(0xFF10253C)],
-        ),
-      ),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.14),
-              ),
-            ),
-            child: Text(
-              'XILLAFIT',
-              style: AppTextStyles.label.copyWith(
-                color: AppColors.goldLight,
-                letterSpacing: 2.6,
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            isRegister ? 'Create your premium account' : 'Welcome back',
-            textAlign: TextAlign.center,
-            style: AppTextStyles.title.copyWith(
-              color: Colors.white,
-              fontSize: 28,
-              height: 1.05,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            isRegister
-                ? 'A simpler 2-step signup flow with all of your existing details preserved.'
-                : 'Sign in quickly and continue managing orders, previews, and your account.',
-            textAlign: TextAlign.center,
-            style: AppTextStyles.body.copyWith(
-              color: Colors.white.withValues(alpha: 0.84),
-              fontSize: 14,
-              height: 1.45,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AuthSegmentedControl extends StatelessWidget {
-  const _AuthSegmentedControl({
-    required this.currentTab,
-    required this.onChanged,
-  });
-
-  final AuthTab currentTab;
-  final ValueChanged<AuthTab>? onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF7E6),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFF1D7A8)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _SegmentButton(
-              label: 'Sign In',
-              selected: currentTab == AuthTab.signIn,
-              onTap: onChanged == null ? null : () => onChanged!(AuthTab.signIn),
-            ),
-          ),
-          Expanded(
-            child: _SegmentButton(
-              label: 'Create Account',
-              selected: currentTab == AuthTab.register,
-              onTap: onChanged == null ? null : () => onChanged!(AuthTab.register),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SegmentButton extends StatelessWidget {
-  const _SegmentButton({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOut,
-      decoration: BoxDecoration(
-        color: selected ? Colors.white : Colors.transparent,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: selected
-            ? const [
-                BoxShadow(
-                  color: Color(0x120F172A),
-                  blurRadius: 10,
-                  offset: Offset(0, 4),
-                ),
-              ]
-            : null,
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: AppTextStyles.body.copyWith(
-              fontWeight: FontWeight.w700,
-              color: selected ? AppColors.text : const Color(0xFF7F8897),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _AuthBackButton extends StatelessWidget {
@@ -1534,6 +1404,8 @@ class _CleanDropdownField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final validValue = items.any((item) => item.value == value) ? value : null;
+
     return InputDecorator(
       decoration: InputDecoration(
         labelText: label,
@@ -1558,7 +1430,7 @@ class _CleanDropdownField extends StatelessWidget {
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
-          value: value,
+          value: validValue,
           isExpanded: true,
           hint: Text(
             hint,
@@ -1575,148 +1447,6 @@ class _CleanDropdownField extends StatelessWidget {
           onChanged: enabled ? onChanged : null,
         ),
       ),
-    );
-  }
-}
-
-class _ReadOnlyAuthField extends StatelessWidget {
-  const _ReadOnlyAuthField({
-    required this.label,
-    required this.value,
-    required this.prefixIcon,
-  });
-
-  final String label;
-  final String value;
-  final IconData prefixIcon;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label.toUpperCase(),
-          style: AppTextStyles.label.copyWith(
-            color: const Color(0xFF7C6B56),
-            letterSpacing: 1.2,
-          ),
-        ),
-        const SizedBox(height: 8),
-        InputDecorator(
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: const Color(0xFFF9F2E6),
-            prefixIcon: Icon(prefixIcon, color: AppColors.goldDark, size: 20),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 15,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(18),
-              borderSide: const BorderSide(
-                color: Color(0xFFE8DCC7),
-                width: 1.2,
-              ),
-            ),
-          ),
-          child: Text(
-            value.isEmpty ? 'Auto-filled after selection' : value,
-            style: AppTextStyles.body.copyWith(
-              color: value.isEmpty ? const Color(0xFFB6A995) : AppColors.text,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _AuthDropdownField extends StatelessWidget {
-  const _AuthDropdownField({
-    required this.label,
-    required this.value,
-    required this.hint,
-    required this.items,
-    required this.onChanged,
-    required this.enabled,
-    required this.prefixIcon,
-    this.errorText,
-  });
-
-  final String label;
-  final String? value;
-  final String hint;
-  final List<DropdownMenuItem<String>> items;
-  final ValueChanged<String?> onChanged;
-  final bool enabled;
-  final IconData prefixIcon;
-  final String? errorText;
-
-  @override
-  Widget build(BuildContext context) {
-    final borderColor =
-        errorText != null ? AppColors.goldDark : const Color(0xFFE7D8C2);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label.toUpperCase(),
-          style: AppTextStyles.label.copyWith(
-            color: const Color(0xFF7C6B56),
-            letterSpacing: 1.2,
-          ),
-        ),
-        const SizedBox(height: 8),
-        InputDecorator(
-          decoration: InputDecoration(
-            errorText: errorText,
-            errorMaxLines: 3,
-            filled: true,
-            fillColor: enabled
-                ? const Color(0xFFFFFBF5)
-                : const Color(0xFFF6EFE2),
-            prefixIcon: Icon(prefixIcon, color: AppColors.goldDark, size: 20),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 6,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(18),
-              borderSide: BorderSide(color: borderColor, width: 1.2),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(18),
-              borderSide: const BorderSide(color: AppColors.gold, width: 1.4),
-            ),
-            disabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(18),
-              borderSide: BorderSide(color: borderColor, width: 1.2),
-            ),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: value,
-              isExpanded: true,
-              hint: Text(
-                hint,
-                style: AppTextStyles.body.copyWith(
-                  color: const Color(0xFFB6A995),
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              style: AppTextStyles.body.copyWith(
-                color: AppColors.text,
-                fontWeight: FontWeight.w600,
-              ),
-              items: items,
-              onChanged: enabled ? onChanged : null,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }
@@ -1763,120 +1493,6 @@ class _AuthMessage extends StatelessWidget {
   }
 }
 
-class _RegisterStepHeader extends StatelessWidget {
-  const _RegisterStepHeader({required this.step});
-
-  final int step;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Step $step of 2',
-          style: AppTextStyles.label.copyWith(
-            color: AppColors.goldDark,
-            letterSpacing: 1.1,
-          ),
-        ),
-        const SizedBox(height: 8),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(999),
-          child: Row(
-            children: [
-              Expanded(
-                child: Container(
-                  height: 6,
-                  color: step >= 1
-                      ? AppColors.gold
-                      : const Color(0xFFE7D8C2),
-                ),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Container(
-                  height: 6,
-                  color: step >= 2
-                      ? AppColors.gold
-                      : const Color(0xFFE7D8C2),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _AuthPrimaryButton extends StatelessWidget {
-  const _AuthPrimaryButton({
-    required this.text,
-    required this.onPressed,
-    required this.isLoading,
-  });
-
-  final String text;
-  final VoidCallback? onPressed;
-  final bool isLoading;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton(
-        onPressed: isLoading ? null : onPressed,
-        style: ElevatedButton.styleFrom(
-          elevation: 0,
-          shadowColor: Colors.transparent,
-          padding: EdgeInsets.zero,
-          backgroundColor: Colors.transparent,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-        ),
-        child: Ink(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            gradient: const LinearGradient(
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-              colors: [Color(0xFFFBBF24), Color(0xFFF59E0B)],
-            ),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x22F59E0B),
-                blurRadius: 10,
-                offset: Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 52),
-            alignment: Alignment.center,
-            child: isLoading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: AppColors.text,
-                    ),
-                  )
-                : Text(
-                    text,
-                    style: AppTextStyles.button.copyWith(
-                      color: AppColors.text,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _SecondaryActionButton extends StatelessWidget {
   const _SecondaryActionButton({
@@ -1958,33 +1574,6 @@ class _AuthFooter extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _HeroPill extends StatelessWidget {
-  const _HeroPill({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.10),
-        ),
-      ),
-      child: Text(
-        label,
-        style: AppTextStyles.caption.copyWith(
-          color: Colors.white.withValues(alpha: 0.82),
-          fontWeight: FontWeight.w600,
-        ),
-      ),
     );
   }
 }

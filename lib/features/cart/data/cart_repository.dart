@@ -8,11 +8,19 @@ class CartLineItem {
     required this.cartId,
     required this.item,
     required this.quantity,
+    this.size,
+    this.fabric,
+    this.customName,
+    this.customNumber,
   });
 
   final String cartId;
   final ClothingItemModel item;
   final int quantity;
+  final String? size;
+  final String? fabric;
+  final String? customName;
+  final String? customNumber;
 
   double get lineTotal => (item.basePrice ?? 0) * quantity;
 
@@ -20,11 +28,19 @@ class CartLineItem {
     String? cartId,
     ClothingItemModel? item,
     int? quantity,
+    String? size,
+    String? fabric,
+    String? customName,
+    String? customNumber,
   }) {
     return CartLineItem(
       cartId: cartId ?? this.cartId,
       item: item ?? this.item,
       quantity: quantity ?? this.quantity,
+      size: size ?? this.size,
+      fabric: fabric ?? this.fabric,
+      customName: customName ?? this.customName,
+      customNumber: customNumber ?? this.customNumber,
     );
   }
 
@@ -38,12 +54,18 @@ class CartLineItem {
         categoryId: '',
         name: map['name']?.toString() ?? '',
         previewImageUrl: map['image']?.toString(),
-        basePrice: rawPrice is num ? rawPrice.toDouble() : double.tryParse('$rawPrice'),
+        basePrice:
+            rawPrice is num ? rawPrice.toDouble() : double.tryParse('$rawPrice'),
         description: category == null || category.isEmpty ? null : category,
       ),
       quantity: map['quantity'] is num
           ? (map['quantity'] as num).toInt()
           : int.tryParse('${map['quantity']}') ?? 1,
+      size: map['size']?.toString(),
+      fabric: map['fabric']?.toString(),
+      customName: map['customName']?.toString() ?? map['custom_name']?.toString(),
+      customNumber:
+          map['customNumber']?.toString() ?? map['custom_number']?.toString(),
     );
   }
 }
@@ -64,12 +86,20 @@ class CartRepository {
   Future<List<CartLineItem>> addItem({
     required String productId,
     required int quantity,
+    String? size,
+    String? fabric,
+    String? customName,
+    String? customNumber,
   }) async {
     final data = await _api.post(
       '/cart/add',
       body: {
         'productId': productId,
         'quantity': quantity,
+        if ((size ?? '').trim().isNotEmpty) 'size': size,
+        if ((fabric ?? '').trim().isNotEmpty) 'fabric': fabric,
+        if ((customName ?? '').trim().isNotEmpty) 'customName': customName,
+        if ((customNumber ?? '').trim().isNotEmpty) 'customNumber': customNumber,
       },
     );
     return _parseList(data);
@@ -84,6 +114,12 @@ class CartRepository {
             {
               'id': line.item.id,
               'quantity': line.quantity,
+              if ((line.size ?? '').trim().isNotEmpty) 'size': line.size,
+              if ((line.fabric ?? '').trim().isNotEmpty) 'fabric': line.fabric,
+              if ((line.customName ?? '').trim().isNotEmpty)
+                'customName': line.customName,
+              if ((line.customNumber ?? '').trim().isNotEmpty)
+                'customNumber': line.customNumber,
             },
         ],
       },

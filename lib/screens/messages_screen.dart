@@ -71,7 +71,7 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = error.toString();
+        _error = _friendlyMessagesError(error);
       });
     }
   }
@@ -144,7 +144,7 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
+        SnackBar(content: Text(_friendlyMessagesError(error))),
       );
     } finally {
       if (mounted) {
@@ -244,12 +244,19 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
                           itemBuilder: (context, index) {
                             final message = _messages[index];
                             final mine = message.senderProfileId == userId;
+                            final hasImage = message.hasImage;
+                            final hasText = message.hasText;
                             return Align(
                               alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
                               child: Container(
                                 constraints: const BoxConstraints(maxWidth: 280),
                                 margin: const EdgeInsets.only(bottom: 10),
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                padding: EdgeInsets.fromLTRB(
+                                  hasImage ? 8 : 14,
+                                  hasImage ? 8 : 10,
+                                  hasImage ? 8 : 14,
+                                  10,
+                                ),
                                 decoration: BoxDecoration(
                                   color: mine ? AppColors.gold : Colors.white,
                                   borderRadius: BorderRadius.only(
@@ -266,13 +273,70 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
                                   crossAxisAlignment:
                                       mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      message.messageContent,
-                                      style: AppTextStyles.body.copyWith(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w500,
+                                    if (hasImage)
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(14),
+                                        child: ConstrainedBox(
+                                          constraints: const BoxConstraints(
+                                            maxWidth: 220,
+                                            minHeight: 96,
+                                            maxHeight: 220,
+                                          ),
+                                          child: Image.network(
+                                            message.imageUrl!,
+                                            fit: BoxFit.cover,
+                                            loadingBuilder: (context, child, progress) {
+                                              if (progress == null) return child;
+                                              return Container(
+                                                width: 220,
+                                                height: 140,
+                                                color: mine
+                                                    ? Colors.white.withValues(alpha: 0.28)
+                                                    : const Color(0xFFF8F8F8),
+                                                alignment: Alignment.center,
+                                                child: const SizedBox(
+                                                  width: 22,
+                                                  height: 22,
+                                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                                ),
+                                              );
+                                            },
+                                            errorBuilder: (_, _, _) => Container(
+                                              width: 220,
+                                              height: 140,
+                                              color: mine
+                                                  ? Colors.white.withValues(alpha: 0.28)
+                                                  : const Color(0xFFF8F8F8),
+                                              alignment: Alignment.center,
+                                              child: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  const Icon(
+                                                    Icons.broken_image_outlined,
+                                                    color: Color(0xFF6B7280),
+                                                  ),
+                                                  const SizedBox(height: 6),
+                                                  Text(
+                                                    'Image unavailable',
+                                                    style: AppTextStyles.caption.copyWith(
+                                                      color: const Color(0xFF6B7280),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
                                       ),
-                                    ),
+                                    if (hasImage && hasText) const SizedBox(height: 8),
+                                    if (hasText)
+                                      Text(
+                                        message.messageContent,
+                                        style: AppTextStyles.body.copyWith(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
                                     const SizedBox(height: 4),
                                     Text(
                                       _formatTime(message.sentAt),
@@ -359,8 +423,29 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
 
 String _formatTime(DateTime? value) {
   if (value == null) return '-';
-  final hour = value.hour == 0 ? 12 : (value.hour > 12 ? value.hour - 12 : value.hour);
-  final minute = value.minute.toString().padLeft(2, '0');
-  final suffix = value.hour >= 12 ? 'PM' : 'AM';
+  final localValue = value.isUtc ? value.toLocal() : value;
+  final hour =
+      localValue.hour == 0 ? 12 : (localValue.hour > 12 ? localValue.hour - 12 : localValue.hour);
+  final minute = localValue.minute.toString().padLeft(2, '0');
+  final suffix = localValue.hour >= 12 ? 'PM' : 'AM';
   return '$hour:$minute $suffix';
+}
+
+String _friendlyMessagesError(Object error) {
+  final text = error.toString().trim();
+  final lower = text.toLowerCase();
+
+  if (lower.contains('product id or custom design id is required')) {
+    return 'Unable to send your message right now. Please try again in a moment.';
+  }
+  if (lower.contains('not authenticated') || lower.contains('sign in')) {
+    return 'Please sign in again to continue chatting with support.';
+  }
+  if (lower.contains('failed to fetch') ||
+      lower.contains('socket') ||
+      lower.contains('network') ||
+      lower.contains('timeout')) {
+    return 'Support chat is temporarily unavailable. Check your connection and try again.';
+  }
+  return 'Something went wrong in support chat. Please try again.';
 }

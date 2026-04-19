@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:xillafit_flutter/app_theme.dart';
-import 'package:xillafit_flutter/core/payments/payment_return_handler.dart';
 import 'package:xillafit_flutter/core/config/supabase_env.dart';
+import 'package:xillafit_flutter/core/links/mobile_link_handler.dart';
+import 'package:xillafit_flutter/core/notifications/push_notification_service.dart';
 import 'package:xillafit_flutter/features/auth/presentation/auth_gate.dart';
 import 'package:xillafit_flutter/features/auth/presentation/register_screen.dart';
 import 'package:xillafit_flutter/screens/login_screen.dart';
@@ -15,6 +16,7 @@ import 'package:xillafit_flutter/screens/order_history_screen.dart';
 import 'package:xillafit_flutter/screens/order_tracking_screen.dart';
 import 'package:xillafit_flutter/screens/payment_submission_screen.dart';
 import 'package:xillafit_flutter/screens/product_detail_screen.dart';
+import 'package:xillafit_flutter/screens/cart_placeholder_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -52,22 +54,25 @@ class XillaApp extends StatefulWidget {
 
 class _XillaAppState extends State<XillaApp> {
   final _navigatorKey = GlobalKey<NavigatorState>();
-  PaymentReturnHandler? _paymentReturnHandler;
+  MobileLinkHandler? _mobileLinkHandler;
 
   @override
   void initState() {
     super.initState();
-    _paymentReturnHandler = PaymentReturnHandler(
+    _mobileLinkHandler = MobileLinkHandler(
       navigatorKey: _navigatorKey,
     );
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _paymentReturnHandler?.initialize();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _mobileLinkHandler?.initialize();
+      await PushNotificationService.instance.initialize(
+        navigatorKey: _navigatorKey,
+      );
     });
   }
 
   @override
   void dispose() {
-    _paymentReturnHandler?.dispose();
+    _mobileLinkHandler?.dispose();
     super.dispose();
   }
 
@@ -84,6 +89,7 @@ class _XillaAppState extends State<XillaApp> {
         RegisterScreen.routeName: (_) => const RegisterScreen(),
         OnboardingScreen.routeName: (_) => const OnboardingScreen(),
         MainShell.routeName: (_) => const MainShell(),
+        CartPlaceholderScreen.routeName: (_) => const CartPlaceholderScreen(),
         ProductDetailScreen.routeName: (_) => const ProductDetailScreen(),
         OrderTrackingScreen.routeName: (_) => const OrderTrackingScreen(),
         OrderHistoryScreen.routeName: (_) => const OrderHistoryScreen(),

@@ -53,6 +53,25 @@ class NotificationsRepository {
         .toList();
   }
 
+  Stream<List<AppNotificationItem>> watchMyNotifications() {
+    final userId = currentUserId;
+    if (userId == null) {
+      return Stream<List<AppNotificationItem>>.value(const []);
+    }
+
+    return _client
+        .from('notifications')
+        .stream(primaryKey: const ['id'])
+        .eq('profile_id', userId)
+        .order('created_at', ascending: false)
+        .limit(100)
+        .map(
+          (rows) => rows
+              .map((row) => AppNotificationItem.fromMap(Map<String, dynamic>.from(row)))
+              .toList(),
+        );
+  }
+
   Future<void> markAsRead(String notificationId) async {
     final userId = currentUserId;
     if (userId == null) return;
@@ -78,4 +97,15 @@ class NotificationsRepository {
 
 final notificationsRepositoryProvider = Provider<NotificationsRepository>((ref) {
   return NotificationsRepository(client: Supabase.instance.client);
+});
+
+final myNotificationsProvider = StreamProvider<List<AppNotificationItem>>((ref) {
+  return ref.watch(notificationsRepositoryProvider).watchMyNotifications();
+});
+
+final unreadNotificationsCountProvider = Provider<int>((ref) {
+  return ref.watch(myNotificationsProvider).maybeWhen(
+        data: (items) => items.where((item) => !item.isRead).length,
+        orElse: () => 0,
+      );
 });

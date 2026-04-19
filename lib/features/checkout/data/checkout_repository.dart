@@ -36,6 +36,10 @@ class CheckoutLineItem {
     this.image,
     this.category,
     this.size,
+    this.fabric,
+    this.customDesignId,
+    this.customName,
+    this.customNumber,
   });
 
   final String id;
@@ -45,18 +49,26 @@ class CheckoutLineItem {
   final String? image;
   final String? category;
   final String? size;
+  final String? fabric;
+  final String? customDesignId;
+  final String? customName;
+  final String? customNumber;
 
   double get subtotal => price * quantity;
 
   Map<String, dynamic> toApiMap() {
     return {
-      'id': id,
+      if (id.trim().isNotEmpty) 'id': id,
       'name': name,
       'price': price,
       'image': image,
       'quantity': quantity,
       'category': category,
       if ((size ?? '').trim().isNotEmpty) 'size': size,
+      if ((fabric ?? '').trim().isNotEmpty) 'fabric': fabric,
+      if ((customDesignId ?? '').trim().isNotEmpty) 'customDesignId': customDesignId,
+      if ((customName ?? '').trim().isNotEmpty) 'customName': customName,
+      if ((customNumber ?? '').trim().isNotEmpty) 'customNumber': customNumber,
     };
   }
 
@@ -68,6 +80,10 @@ class CheckoutLineItem {
       quantity: line.quantity,
       image: line.item.previewImageUrl,
       category: line.item.description,
+      size: line.size,
+      fabric: line.fabric,
+      customName: line.customName,
+      customNumber: line.customNumber,
     );
   }
 }
@@ -84,8 +100,15 @@ class CustomDesignDraft {
     this.backPreviewImage,
     this.sizeLabel,
     this.productId,
+    this.fabric,
+    this.instructions,
+    this.unitPrice,
+    this.totalPieces,
+    this.totalPrice,
     this.isLogoTexture = false,
     this.isFullTexture = false,
+    this.quantities = const <String, int>{},
+    this.roster = const <Map<String, dynamic>>[],
     this.layers = const <Map<String, dynamic>>[],
     this.shirtDetails = const <String, dynamic>{},
   });
@@ -100,13 +123,22 @@ class CustomDesignDraft {
   final String? backPreviewImage;
   final String? sizeLabel;
   final String? productId;
+  final String? fabric;
+  final String? instructions;
+  final double? unitPrice;
+  final int? totalPieces;
+  final double? totalPrice;
   final bool isLogoTexture;
   final bool isFullTexture;
+  final Map<String, int> quantities;
+  final List<Map<String, dynamic>> roster;
   final List<Map<String, dynamic>> layers;
   final Map<String, dynamic> shirtDetails;
 
   factory CustomDesignDraft.fromCustomizerResult(Map<String, dynamic> map) {
     final rawLayers = map['layers'];
+    final rawQuantities = map['quantities'];
+    final rawRoster = map['roster'];
     return CustomDesignDraft(
       designId: map['designId']?.toString() ?? map['design']?.toString() ?? '',
       name: map['name']?.toString() ?? 'Custom Design',
@@ -118,8 +150,33 @@ class CustomDesignDraft {
       backPreviewImage: map['backPreviewImage']?.toString(),
       sizeLabel: map['sizeLabel']?.toString(),
       productId: map['productId']?.toString(),
+      fabric: map['fabric']?.toString(),
+      instructions: map['instructions']?.toString(),
+      unitPrice: map['unitPrice'] is num
+          ? (map['unitPrice'] as num).toDouble()
+          : double.tryParse('${map['unitPrice']}'),
+      totalPieces: map['totalPieces'] is num
+          ? (map['totalPieces'] as num).toInt()
+          : int.tryParse('${map['totalPieces']}'),
+      totalPrice: map['totalPrice'] is num
+          ? (map['totalPrice'] as num).toDouble()
+          : double.tryParse('${map['totalPrice']}'),
       isLogoTexture: map['isLogoTexture'] == true || map['isLogoTexture']?.toString() == 'true',
       isFullTexture: map['isFullTexture'] == true || map['isFullTexture']?.toString() == 'true',
+      quantities: rawQuantities is Map
+          ? rawQuantities.map(
+              (key, value) => MapEntry(
+                key.toString(),
+                value is num ? value.toInt() : int.tryParse('$value') ?? 0,
+              ),
+            )
+          : const <String, int>{},
+      roster: rawRoster is List
+          ? rawRoster
+              .whereType<Map>()
+              .map((entry) => Map<String, dynamic>.from(entry))
+              .toList()
+          : const <Map<String, dynamic>>[],
       layers: rawLayers is List
           ? rawLayers
               .whereType<Map>()
@@ -137,13 +194,21 @@ class CustomDesignDraft {
       'id': designId,
       'name': name,
       'description': 'Saved from mobile customizer',
+      if ((productId ?? '').trim().isNotEmpty) 'productId': productId,
       if ((color ?? '').trim().isNotEmpty) 'color': color,
       if ((previewImage ?? '').trim().isNotEmpty) 'previewImage': previewImage,
       if ((backPreviewImage ?? '').trim().isNotEmpty)
         'backPreviewImage': backPreviewImage,
       if ((textureUrl ?? '').trim().isNotEmpty) 'textureUrl': textureUrl,
+      if ((fabric ?? '').trim().isNotEmpty) 'fabric': fabric,
+      if ((instructions ?? '').trim().isNotEmpty) 'instructions': instructions,
+      if (unitPrice != null) 'unitPrice': unitPrice,
+      if (totalPieces != null) 'totalPieces': totalPieces,
+      if (totalPrice != null) 'totalPrice': totalPrice,
       'isLogoTexture': isLogoTexture,
       'isFullTexture': isFullTexture,
+      if (quantities.isNotEmpty) 'quantities': quantities,
+      if (roster.isNotEmpty) 'roster': roster,
       'shirtDetails': shirtDetails,
       'layers': layers,
       if ((logoUrl ?? '').trim().isNotEmpty) 'logoUrl': logoUrl,

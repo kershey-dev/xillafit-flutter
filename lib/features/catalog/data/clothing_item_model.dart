@@ -10,6 +10,8 @@ class ClothingItemModel {
 
   /// Not present in current schema; nullable for forward compatibility.
   final double? basePrice;
+  final double? avgRating;
+  final int reviewCount;
 
   const ClothingItemModel({
     required this.id,
@@ -21,6 +23,8 @@ class ClothingItemModel {
     this.availabilityStatus,
     this.createdAt,
     this.basePrice,
+    this.avgRating,
+    this.reviewCount = 0,
   });
 
   bool get isAvailable => (availabilityStatus ?? 'available').trim().toLowerCase() == 'available';
@@ -40,6 +44,18 @@ class ClothingItemModel {
     if (rawPrice is num) price = rawPrice.toDouble();
     if (rawPrice is String) price = double.tryParse(rawPrice);
 
+    double? avgRating;
+    final rawAvgRating = map['avg_rating'];
+    if (rawAvgRating is num) avgRating = rawAvgRating.toDouble();
+    if (rawAvgRating is String) avgRating = double.tryParse(rawAvgRating);
+
+    int reviewCount = 0;
+    final rawReviewCount = map['review_count'];
+    if (rawReviewCount is num) reviewCount = rawReviewCount.toInt();
+    if (rawReviewCount is String) {
+      reviewCount = int.tryParse(rawReviewCount) ?? reviewCount;
+    }
+
     return ClothingItemModel(
       id: map['id']?.toString() ?? '',
       categoryId: map['category_id']?.toString() ?? '',
@@ -50,6 +66,8 @@ class ClothingItemModel {
       availabilityStatus: map['availability_status']?.toString(),
       createdAt: DateTime.tryParse(map['created_at']?.toString() ?? ''),
       basePrice: price,
+      avgRating: avgRating,
+      reviewCount: reviewCount,
     );
   }
 }

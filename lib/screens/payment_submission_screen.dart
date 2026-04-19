@@ -30,6 +30,9 @@ class PaymentSubmissionArgs {
     required ClothingItemModel item,
     required int quantity,
     String? size,
+    String? fabric,
+    String? customName,
+    String? customNumber,
   }) {
     return PaymentSubmissionArgs(
       directItems: [
@@ -41,6 +44,9 @@ class PaymentSubmissionArgs {
           image: item.previewImageUrl,
           category: item.description,
           size: size,
+          fabric: fabric,
+          customName: customName,
+          customNumber: customNumber,
         ),
       ],
     );
@@ -72,11 +78,17 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
   String? _estimateDate;
   List<DeliveryZone> _zones = const [];
   final Map<String, int> _customQuantities = {
+    '5XS': 0,
+    '4XS': 0,
+    '3XS': 0,
+    '2XS': 0,
+    'XS': 0,
     'S': 0,
     'M': 0,
     'L': 0,
     'XL': 0,
     '2XL': 0,
+    '3XL': 0,
   };
   final _customInstructionsController = TextEditingController();
   final _customFabricOptions = const [
@@ -87,6 +99,7 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
     'Fleece (hoodie)',
   ];
   String _customFabric = 'Cotton 100%';
+  bool _didPrefillCustomDesign = false;
 
   final _streetController = TextEditingController();
   String _selectedMunicipality = '';
@@ -97,6 +110,34 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
   void initState() {
     super.initState();
     Future.microtask(_bootstrap);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_didPrefillCustomDesign) return;
+
+    final design = _screenArgs()?.customDesign;
+    if (design == null) return;
+
+    _didPrefillCustomDesign = true;
+    _customFabric = design.fabric?.trim().isNotEmpty == true
+        ? design.fabric!.trim()
+        : _customFabric;
+    if ((design.instructions ?? '').trim().isNotEmpty) {
+      _customInstructionsController.text = design.instructions!.trim();
+    }
+    if (design.quantities.isNotEmpty) {
+      for (final size in _customQuantities.keys) {
+        _customQuantities[size] = design.quantities[size] ?? 0;
+      }
+    } else if ((design.totalPieces ?? 0) > 0) {
+      final fallbackSize = (design.sizeLabel ?? '').trim();
+      final bucket = _customQuantities.containsKey(fallbackSize)
+          ? fallbackSize
+          : 'M';
+      _customQuantities[bucket] = design.totalPieces!;
+    }
   }
 
   @override
@@ -179,6 +220,18 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
   }
 
   bool get _isCustomDesignFlow => _customDesign() != null;
+
+  bool get _hasPrefilledBulkConfiguration {
+    final design = _customDesign();
+    if (design == null) return false;
+    return design.roster.isNotEmpty ||
+        design.quantities.isNotEmpty ||
+        (design.totalPieces ?? 0) > 0 ||
+        (design.sizeLabel ?? '').trim().isNotEmpty ||
+        (design.fabric ?? '').trim().isNotEmpty ||
+        design.unitPrice != null ||
+        design.totalPrice != null;
+  }
 
   int get _customTotalPieces {
     return _customQuantities.values.fold<int>(0, (sum, qty) => sum + qty);
@@ -308,9 +361,6 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
       await PaymentSessionStore.clear();
       if (!mounted) return;
       setState(() => _error = error.toString());
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
     } finally {
       if (mounted) {
         setState(() {
@@ -354,7 +404,8 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
     }
 
     final deliveryFee = _deliveryFeeFor(_selectedMunicipality);
-    final itemsTotal = _customTotalPieces * 350.0;
+    final unitPrice = design.unitPrice ?? 350.0;
+    final itemsTotal = _customTotalPieces * unitPrice;
     final grandTotal = itemsTotal + deliveryFee;
     final amountDueNow = grandTotal * 0.5;
     final referenceId = 'XF-CUSTOM-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
@@ -439,9 +490,6 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
       await PaymentSessionStore.clear();
       if (!mounted) return;
       setState(() => _error = error.toString());
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
     } finally {
       if (mounted) {
         setState(() {
@@ -465,8 +513,9 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
   Widget build(BuildContext context) {
     final items = _resolveItems();
     final customDesign = _customDesign();
+    final customUnitPrice = customDesign?.unitPrice ?? 350.0;
     final itemsTotal = _isCustomDesignFlow
-        ? _customTotalPieces * 350.0
+        ? _customTotalPieces * customUnitPrice
         : items.fold<double>(0, (sum, item) => sum + item.subtotal);
     final deliveryFee = _deliveryFeeFor(_selectedMunicipality);
     final grandTotal = itemsTotal + deliveryFee;
@@ -607,42 +656,79 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
                                 ],
                               ),
                               const SizedBox(height: 14),
-                              _FieldLabel('Fabric / Material'),
-                              DropdownButtonFormField<String>(
-                                initialValue: _customFabric,
-                                items: [
-                                  for (final fabric in _customFabricOptions)
-                                    DropdownMenuItem<String>(
-                                      value: fabric,
-                                      child: Text(fabric),
+                              if (_hasPrefilledBulkConfiguration) ...[
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFF7E6),
+                                    borderRadius: BorderRadius.circular(18),
+                                    border: Border.all(color: const Color(0xFFF5D28C)),
+                                  ),
+                                  child: Text(
+                                    'Bulk order details were already configured in the customizer. Review them below, then continue to payment.',
+                                    style: AppTextStyles.caption.copyWith(
+                                      color: AppColors.goldDark,
+                                      fontWeight: FontWeight.w700,
                                     ),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                _StaticInfo(
+                                  label: 'Fabric / Material',
+                                  value: _customFabric,
+                                ),
+                                const SizedBox(height: 12),
+                                _BulkQuantitiesCard(quantities: _customQuantities),
+                                if (customDesign.roster.isNotEmpty) ...[
+                                  const SizedBox(height: 12),
+                                  _BulkRosterCard(roster: customDesign.roster),
                                 ],
-                                decoration: _inputDecoration('Choose material'),
-                                onChanged: (value) {
-                                  if (value == null) return;
-                                  setState(() => _customFabric = value);
-                                },
-                              ),
-                              const SizedBox(height: 12),
-                              _FieldLabel('Size quantities'),
-                              for (final size in _customQuantities.keys) ...[
-                                _CustomSizeRow(
-                                  size: size,
-                                  quantity: _customQuantities[size] ?? 0,
-                                  onDecrease: () => _changeCustomQuantity(size, -1),
-                                  onIncrease: () => _changeCustomQuantity(size, 1),
+                                if (_customInstructionsController.text.trim().isNotEmpty) ...[
+                                  const SizedBox(height: 12),
+                                  _StaticMultilineInfo(
+                                    label: 'Design / Production Notes',
+                                    value: _customInstructionsController.text.trim(),
+                                  ),
+                                ],
+                              ] else ...[
+                                _FieldLabel('Fabric / Material'),
+                                DropdownButtonFormField<String>(
+                                  initialValue: _customFabric,
+                                  items: [
+                                    for (final fabric in _customFabricOptions)
+                                      DropdownMenuItem<String>(
+                                        value: fabric,
+                                        child: Text(fabric),
+                                      ),
+                                  ],
+                                  decoration: _inputDecoration('Choose material'),
+                                  onChanged: (value) {
+                                    if (value == null) return;
+                                    setState(() => _customFabric = value);
+                                  },
                                 ),
-                                const SizedBox(height: 8),
+                                const SizedBox(height: 12),
+                                _FieldLabel('Size quantities'),
+                                for (final size in _customQuantities.keys) ...[
+                                  _CustomSizeRow(
+                                    size: size,
+                                    quantity: _customQuantities[size] ?? 0,
+                                    onDecrease: () => _changeCustomQuantity(size, -1),
+                                    onIncrease: () => _changeCustomQuantity(size, 1),
+                                  ),
+                                  const SizedBox(height: 8),
+                                ],
+                                const SizedBox(height: 4),
+                                _FieldLabel('Design / Production Notes'),
+                                TextField(
+                                  controller: _customInstructionsController,
+                                  maxLines: 3,
+                                  decoration: _inputDecoration(
+                                    'Optional notes for print placement, roster, or production details',
+                                  ),
+                                ),
                               ],
-                              const SizedBox(height: 4),
-                              _FieldLabel('Design / Production Notes'),
-                              TextField(
-                                controller: _customInstructionsController,
-                                maxLines: 3,
-                                decoration: _inputDecoration(
-                                  'Optional notes for print placement, roster, or production details',
-                                ),
-                              ),
                             ],
                           ),
                         ),
@@ -974,6 +1060,163 @@ class _StaticInfo extends StatelessWidget {
   }
 }
 
+class _StaticMultilineInfo extends StatelessWidget {
+  const _StaticMultilineInfo({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: AppTextStyles.caption),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: AppTextStyles.body.copyWith(fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BulkQuantitiesCard extends StatelessWidget {
+  const _BulkQuantitiesCard({
+    required this.quantities,
+  });
+
+  final Map<String, int> quantities;
+
+  @override
+  Widget build(BuildContext context) {
+    final activeEntries = quantities.entries.where((entry) => entry.value > 0).toList();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Size quantities', style: AppTextStyles.caption),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final entry in activeEntries)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF7E6),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: const Color(0xFFF5D28C)),
+                  ),
+                  child: Text(
+                    '${entry.key}: ${entry.value}',
+                    style: AppTextStyles.body.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.goldDark,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BulkRosterCard extends StatelessWidget {
+  const _BulkRosterCard({
+    required this.roster,
+  });
+
+  final List<Map<String, dynamic>> roster;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Roster', style: AppTextStyles.caption),
+          const SizedBox(height: 10),
+          for (var index = 0; index < roster.length; index++) ...[
+            if (index > 0) const Divider(height: 18),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    color: AppColors.text,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    '${index + 1}',
+                    style: AppTextStyles.caption.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        roster[index]['name']?.toString().trim().isNotEmpty == true
+                            ? roster[index]['name'].toString()
+                            : 'Unnamed',
+                        style: AppTextStyles.body.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Size ${roster[index]['size'] ?? '-'}'
+                        '${(roster[index]['number']?.toString().trim().isNotEmpty == true) ? ' • No. ${roster[index]['number']}' : ''}',
+                        style: AppTextStyles.caption,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _ChoiceTile extends StatelessWidget {
   const _ChoiceTile({
     required this.label,
@@ -1066,7 +1309,15 @@ class _CheckoutItemTile extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                'Qty ${item.quantity}${(item.size ?? '').isNotEmpty ? ' - Size ${item.size}' : ''}',
+                [
+                  'Qty ${item.quantity}',
+                  if ((item.size ?? '').isNotEmpty) 'Size ${item.size}',
+                  if ((item.fabric ?? '').isNotEmpty) item.fabric!,
+                  if ((item.customName ?? '').isNotEmpty)
+                    'Name ${item.customName}',
+                  if ((item.customNumber ?? '').isNotEmpty)
+                    'No. ${item.customNumber}',
+                ].join(' - '),
                 style: AppTextStyles.caption,
               ),
             ],
@@ -1178,7 +1429,7 @@ class _CustomDesignSummaryTile extends StatelessWidget {
           ),
         ),
         Text(
-          'PHP ${(totalPieces * 350).toStringAsFixed(0)}',
+          'PHP ${(totalPieces * (design.unitPrice ?? 350)).toStringAsFixed(0)}',
           style: AppTextStyles.body.copyWith(fontWeight: FontWeight.w800),
         ),
       ],

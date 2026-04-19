@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:xillafit_flutter/features/auth/presentation/auth_providers.dart';
 import 'package:xillafit_flutter/features/cart/data/cart_repository.dart';
 import 'package:xillafit_flutter/features/catalog/data/clothing_item_model.dart';
-import 'package:xillafit_flutter/features/auth/presentation/auth_providers.dart';
 
 class CartState {
   const CartState({
@@ -68,10 +68,21 @@ class CartNotifier extends Notifier<CartState> {
     });
   }
 
-  Future<bool> addItem(ClothingItemModel item, {int quantity = 1}) async {
+  Future<bool> addItem(
+    ClothingItemModel item, {
+    int quantity = 1,
+    String? size,
+    String? fabric,
+    String? customName,
+    String? customNumber,
+  }) async {
     CartLineItem? existing;
     for (final line in state.items) {
-      if (line.item.id == item.id) {
+      if (line.item.id == item.id &&
+          (line.size ?? '') == (size ?? '') &&
+          (line.fabric ?? '') == (fabric ?? '') &&
+          (line.customName ?? '') == (customName ?? '') &&
+          (line.customNumber ?? '') == (customNumber ?? '')) {
         existing = line;
         break;
       }
@@ -82,6 +93,10 @@ class CartNotifier extends Notifier<CartState> {
       final items = await ref.read(cartRepositoryProvider).addItem(
             productId: item.id,
             quantity: nextQuantity,
+            size: size,
+            fabric: fabric,
+            customName: customName,
+            customNumber: customNumber,
           );
       state = state.copyWith(
         items: items,
@@ -91,15 +106,19 @@ class CartNotifier extends Notifier<CartState> {
     });
   }
 
-  Future<bool> updateQuantity(String itemId, int quantity) async {
+  Future<bool> updateQuantity(CartLineItem line, int quantity) async {
     if (quantity <= 0) {
-      return removeItem(itemId);
+      return removeItem(line.cartId);
     }
 
     return _runLoading(() async {
       final items = await ref.read(cartRepositoryProvider).addItem(
-            productId: itemId,
+            productId: line.item.id,
             quantity: quantity,
+            size: line.size,
+            fabric: line.fabric,
+            customName: line.customName,
+            customNumber: line.customNumber,
           );
       state = state.copyWith(
         items: items,
