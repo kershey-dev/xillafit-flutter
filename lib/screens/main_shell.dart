@@ -27,16 +27,24 @@ class _MainShellState extends State<MainShell> {
     );
   }
 
+  Future<void> _openCustomizer() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const MobileWebViewScreen(
+          title: '3D Customizer',
+          initialUrl: AppLinks.customizeUrl,
+          mode: MobileWebViewMode.customizer,
+        ),
+      ),
+    );
+  }
+
   List<Widget> get _tabs => [
     HomeScreen(
       onOpenCart: _openCartScreen,
     ),
     const MessagesScreen(embeddedInShell: true),
-    const MobileWebViewScreen(
-      title: '3D Customizer',
-      initialUrl: AppLinks.customizeUrl,
-      mode: MobileWebViewMode.customizer,
-    ),
+    const SizedBox.shrink(),
     const NotificationsScreen(showScaffold: false),
     const ProfilePlaceholderScreen(),
   ];
@@ -54,7 +62,13 @@ class _MainShellState extends State<MainShell> {
         ),
         child: BottomNavBar(
           currentIndex: _index,
-          onTap: (value) => setState(() => _index = value),
+          onTap: (value) {
+            if (value == 2) {
+              _openCustomizer();
+              return;
+            }
+            setState(() => _index = value);
+          },
         ),
       ),
     );
