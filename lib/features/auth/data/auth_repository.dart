@@ -73,7 +73,9 @@ class AuthRepository {
     debugPrint('[AUTH] signInWithGoogle() launch');
     final launched = await _client.auth.signInWithOAuth(
       OAuthProvider.google,
-      redirectTo: kIsWeb ? null : AppLinks.googleAuthRedirectUrl,
+      // Use the same mobile auth callback shape that the app bridge and
+      // link handler already understand for web-to-app session handoff.
+      redirectTo: kIsWeb ? null : AppLinks.authCallbackUrl(),
       authScreenLaunchMode: LaunchMode.externalApplication,
     );
     debugPrint('[AUTH] signInWithGoogle() launched=$launched');

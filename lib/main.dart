@@ -81,7 +81,7 @@ class _XillaAppState extends State<XillaApp> {
     return MaterialApp(
       navigatorKey: _navigatorKey,
       debugShowCheckedModeBanner: false,
-      title: 'Xilla',
+      title: 'XillaFit',
       theme: AppTheme.light(),
       home: const AuthGate(),
       routes: {
