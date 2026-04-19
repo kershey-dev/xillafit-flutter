@@ -1,15 +1,16 @@
 import 'dart:async';
 
 import 'package:app_links/app_links.dart' as applinks;
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:xillafit_flutter/core/config/app_links.dart';
 import 'package:xillafit_flutter/core/network/backend_api_client.dart';
 import 'package:xillafit_flutter/core/payments/payment_session_store.dart';
+import 'package:xillafit_flutter/features/checkout/data/checkout_repository.dart';
 import 'package:xillafit_flutter/screens/main_shell.dart';
 import 'package:xillafit_flutter/screens/order_history_screen.dart';
 import 'package:xillafit_flutter/screens/order_tracking_screen.dart';
+import 'package:xillafit_flutter/screens/payment_submission_screen.dart';
 
 class MobileLinkHandler {
   MobileLinkHandler({
@@ -65,7 +66,9 @@ class MobileLinkHandler {
       _MobileLinksLifecycleObserver(onResume: _handleAppResume);
 
   bool canHandleUri(Uri uri) {
-    return _isPaymentCallback(uri) || _isAuthCallback(uri);
+    return _isPaymentCallback(uri) ||
+        _isAuthCallback(uri) ||
+        _isCustomizerCallback(uri);
   }
 
   Future<bool> handleUri(Uri uri) async {
@@ -75,6 +78,10 @@ class MobileLinkHandler {
     }
     if (_isAuthCallback(uri)) {
       await _handleAuthUri(uri);
+      return true;
+    }
+    if (_isCustomizerCallback(uri)) {
+      await _handleCustomizerUri(uri);
       return true;
     }
     return false;
@@ -112,6 +119,19 @@ class MobileLinkHandler {
   bool _isSiteBridgeUri(Uri uri, String expectedPath) {
     final siteUri = Uri.parse(AppLinks.siteUrl);
     return uri.host == siteUri.host && uri.path == expectedPath;
+  }
+
+  bool _isCustomizerCallback(Uri uri) {
+    if (uri.scheme == AppLinks.mobileScheme &&
+        uri.host == AppLinks.customizerHost) {
+      return true;
+    }
+
+    final siteUri = Uri.parse(AppLinks.siteUrl);
+    return uri.host == siteUri.host &&
+        (uri.queryParameters['design'] != null ||
+            (uri.path.contains('customizer') &&
+                uri.queryParameters['saved'] != null));
   }
 
   Map<String, String> _mergedParams(Uri uri) {
@@ -175,6 +195,64 @@ class MobileLinkHandler {
       _showSnackBar('Could not restore your session. Please sign in again.');
     }
   }
+
+  Future<void> _handleCustomizerUri(Uri uri) async {
+    final params = _mergedParams(uri);
+    debugPrint('[MOBILE_LINKS] customizer uri=$uri params=$params');
+    final design = CustomDesignDraft.fromCustomizerResult({
+      ...params,
+      'saved': params['saved'] ?? 'true',
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_completeCustomizerNavigation(design));
+    });
+  }
+
+  Future<void> _completeCustomizerNavigation(CustomDesignDraft design) async {
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    final navigator = _navigatorKey.currentState;
+    final context = _navigatorKey.currentContext;
+    debugPrint(
+      '[MOBILE_LINKS] complete customizer navigation '
+      'designId=${design.designId} '
+      'navigator=${navigator != null} '
+      'contextMounted=${context?.mounted}',
+    );
+    if (navigator == null || context == null || !context.mounted) return;
+
+    debugPrint('[MOBILE_LINKS] navigating to MainShell');
+    navigator.pushNamedAndRemoveUntil(
+      MainShell.routeName,
+      (_) => false,
+    );
+
+    if (design.designId.isEmpty) {
+      debugPrint('[MOBILE_LINKS] customizer returned without designId');
+      _showSnackBar('Design synced back to the app.');
+      return;
+    }
+
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+
+    final freshNavigator = _navigatorKey.currentState;
+    final freshContext = _navigatorKey.currentContext;
+    debugPrint(
+      '[MOBILE_LINKS] opening payment submission '
+      'navigator=${freshNavigator != null} '
+      'contextMounted=${freshContext?.mounted}',
+    );
+    if (freshNavigator == null || freshContext == null || !freshContext.mounted) {
+      return;
+    }
+
+    await freshNavigator.pushNamed(
+      PaymentSubmissionScreen.routeName,
+      arguments: PaymentSubmissionArgs.customDesign(design: design),
+    );
+  }
+
 
   Future<void> _handlePaymentUri(Uri uri) async {
     if (_handlingPayment) return;

@@ -58,7 +58,7 @@ class QuantityStepper extends StatelessWidget {
         height: 30,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: isEnabled ? AppColors.surface : AppColors.surface.withOpacity(0.5),
+          color: isEnabled ? AppColors.surface : AppColors.surface.withValues(alpha: 0.5),
           border: Border.all(color: AppColors.border),
           borderRadius: BorderRadius.only(
             topLeft: Radius.circular(left ? AppRadius.small : 0),

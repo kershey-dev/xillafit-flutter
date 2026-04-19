@@ -20,9 +20,16 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _index = 0;
 
+  void _openCartScreen() {
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      CartPlaceholderScreen.routeName,
+      (route) => route.settings.name == MainShell.routeName || route.isFirst,
+    );
+  }
+
   List<Widget> get _tabs => [
     HomeScreen(
-      onOpenCart: () => Navigator.of(context).pushNamed(CartPlaceholderScreen.routeName),
+      onOpenCart: _openCartScreen,
     ),
     const MessagesScreen(embeddedInShell: true),
     const MobileWebViewScreen(

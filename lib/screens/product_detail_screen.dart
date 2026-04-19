@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:xillafit_flutter/core/config/app_links.dart';
 import 'package:xillafit_flutter/features/cart/data/cart_repository.dart';
+import 'package:xillafit_flutter/features/catalog/data/category_model.dart';
 import 'package:xillafit_flutter/features/catalog/data/clothing_item_model.dart';
 import 'package:xillafit_flutter/features/catalog/presentation/catalog_providers.dart';
 import 'package:xillafit_flutter/features/cart/presentation/cart_provider.dart';
-import 'package:xillafit_flutter/features/checkout/data/checkout_repository.dart';
-import 'package:xillafit_flutter/screens/mobile_webview_screen.dart';
 import 'package:xillafit_flutter/screens/payment_submission_screen.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
 
@@ -65,6 +63,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
     final inlineItem = detailArgs?.item;
     final itemId = detailArgs?.itemId ?? inlineItem?.id;
     final fabricsAsync = ref.watch(productFabricOptionsProvider);
+    final categoriesAsync = ref.watch(categoriesProvider);
     final itemAsync = itemId == null
         ? const AsyncData<ClothingItemModel?>(null)
         : ref.watch(clothingItemDetailProvider(itemId));
@@ -76,6 +75,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
           : _bottomActionBar(
               (inlineItem ?? itemAsync.asData?.value)!,
               fabricsAsync.asData?.value ?? const <String>[],
+              categoriesAsync.asData?.value ?? const <CategoryModel>[],
             ),
       body: itemAsync.when(
         loading: () => const Center(child: CircularProgressIndicator(strokeWidth: 2)),
@@ -101,11 +101,12 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
           }
 
           final sold = _soldCount(item.id);
-          final rating = _ratingFor(item.id);
+          final rating = item.avgRating;
           final safeTop = MediaQuery.paddingOf(context).top;
           final fabrics = fabricsAsync.asData?.value ?? const <String>[];
           final isLoadingFabrics = fabricsAsync.isLoading && fabrics.isEmpty;
-          final isJersey = _isJerseyProduct(item);
+          final categories = categoriesAsync.asData?.value ?? const <CategoryModel>[];
+          final isJersey = _isJerseyProduct(item, categories);
 
           return CustomScrollView(
             physics: const BouncingScrollPhysics(),
@@ -198,15 +199,24 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                             ),
                           ),
                           const Spacer(),
-                          const Icon(Icons.star_rounded, color: AppColors.gold, size: 17),
-                          const SizedBox(width: 4),
-                          Text(
-                            rating.toStringAsFixed(1),
-                            style: AppTextStyles.body.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.text,
+                          if ((rating ?? 0) > 0) ...[
+                            const Icon(Icons.star_rounded, color: AppColors.gold, size: 17),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${rating!.toStringAsFixed(1)} (${item.reviewCount})',
+                              style: AppTextStyles.body.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.text,
+                              ),
                             ),
-                          ),
+                          ] else
+                            Text(
+                              'No reviews',
+                              style: AppTextStyles.body.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF9CA3AF),
+                              ),
+                            ),
                         ],
                       ),
                       const SizedBox(height: 10),
@@ -596,57 +606,6 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 18),
-                      GestureDetector(
-                        onTap: _openCustomizationWeb,
-                        child: Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: const Color(0xFFEAEAEA)),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 42,
-                                height: 42,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFFF4DE),
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                child: const Icon(Icons.brush_outlined, color: AppColors.goldDark),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Open Web Customizer',
-                                      style: AppTextStyles.body.copyWith(
-                                        fontWeight: FontWeight.w800,
-                                        color: AppColors.text,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      'Continue in the full studio for advanced jersey customization.',
-                                      style: AppTextStyles.body.copyWith(
-                                        color: const Color(0xFF6B7280),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const Icon(Icons.open_in_new_rounded, color: Color(0xFF9CA3AF)),
-                            ],
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -680,7 +639,11 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
     );
   }
 
-  Widget _bottomActionBar(ClothingItemModel item, List<String> fabrics) {
+  Widget _bottomActionBar(
+    ClothingItemModel item,
+    List<String> fabrics,
+    List<CategoryModel> categories,
+  ) {
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
     return Container(
       padding: EdgeInsets.fromLTRB(18, 14, 18, 14 + bottomInset),
@@ -696,7 +659,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                   ? null
                   : () async {
                       final messenger = ScaffoldMessenger.of(context);
-                      if (!_validateSelections(item, fabrics)) return;
+                      if (!_validateSelections(item, fabrics, categories)) return;
                       setState(() => _isAddingToCart = true);
                       messenger.hideCurrentSnackBar();
                       messenger.showSnackBar(
@@ -713,8 +676,8 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                             quantity: _quantity,
                             size: _selectedSize,
                             fabric: _selectedFabric,
-                            customName: _normalizedCustomName(item),
-                            customNumber: _normalizedCustomNumber(item),
+                            customName: _normalizedCustomName(item, categories),
+                            customNumber: _normalizedCustomNumber(item, categories),
                           );
                       if (!context.mounted) return;
                       setState(() => _isAddingToCart = false);
@@ -774,7 +737,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
           Expanded(
             child: FilledButton(
               onPressed: () {
-                if (!_validateSelections(item, fabrics)) return;
+                if (!_validateSelections(item, fabrics, categories)) return;
                 Navigator.pushNamed(
                   context,
                   PaymentSubmissionScreen.routeName,
@@ -783,8 +746,8 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                     quantity: _quantity,
                     size: _selectedSize,
                     fabric: _selectedFabric,
-                    customName: _normalizedCustomName(item),
-                    customNumber: _normalizedCustomNumber(item),
+                    customName: _normalizedCustomName(item, categories),
+                    customNumber: _normalizedCustomNumber(item, categories),
                   ),
                 );
               },
@@ -843,7 +806,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
             ),
           ),
           const Spacer(),
-          if (trailing != null) trailing,
+          trailing ?? const SizedBox.shrink(),
         ],
       ),
     );
@@ -883,24 +846,29 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
     return 'T-Shirt';
   }
 
-  bool _isJerseyProduct(ClothingItemModel item) {
-    final text = '${item.name} ${item.description ?? ''}'.toLowerCase();
+  bool _isJerseyProduct(ClothingItemModel item, List<CategoryModel> categories) {
+    final categoryName = _categoryNameFor(item, categories);
+    final text = '${item.name} ${item.description ?? ''} $categoryName'.toLowerCase();
     return text.contains('jersey');
   }
 
-  String? _normalizedCustomName(ClothingItemModel item) {
-    if (!_isJerseyProduct(item)) return null;
+  String? _normalizedCustomName(ClothingItemModel item, List<CategoryModel> categories) {
+    if (!_isJerseyProduct(item, categories)) return null;
     final value = _customName.trim().toUpperCase();
     return value.isEmpty ? null : value;
   }
 
-  String? _normalizedCustomNumber(ClothingItemModel item) {
-    if (!_isJerseyProduct(item)) return null;
+  String? _normalizedCustomNumber(ClothingItemModel item, List<CategoryModel> categories) {
+    if (!_isJerseyProduct(item, categories)) return null;
     final value = _customNumber.trim();
     return value.isEmpty ? null : value;
   }
 
-  bool _validateSelections(ClothingItemModel item, List<String> fabrics) {
+  bool _validateSelections(
+    ClothingItemModel item,
+    List<String> fabrics,
+    List<CategoryModel> categories,
+  ) {
     final messenger = ScaffoldMessenger.of(context);
     if ((_selectedSize ?? '').isEmpty) {
       messenger.hideCurrentSnackBar();
@@ -923,7 +891,28 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
       );
       return false;
     }
+    if (_isJerseyProduct(item, categories) && _normalizedCustomName(item, categories) == null) {
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Please enter a jersey name first.')),
+      );
+      return false;
+    }
+    if (_isJerseyProduct(item, categories) && _normalizedCustomNumber(item, categories) == null) {
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Please enter a jersey number first.')),
+      );
+      return false;
+    }
     return true;
+  }
+
+  String _categoryNameFor(ClothingItemModel item, List<CategoryModel> categories) {
+    for (final category in categories) {
+      if (category.id == item.categoryId) return category.name;
+    }
+    return '';
   }
 
   int _soldCount(String id) {
@@ -931,45 +920,9 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
     return 10 + (seed % 90);
   }
 
-  double _ratingFor(String id) {
-    final seed = id.codeUnits.fold<int>(0, (sum, value) => sum + value);
-    return 4.1 + ((seed % 8) / 10);
-  }
-
   String _strikePrice(double value) {
     final text = value % 1 == 0 ? value.toStringAsFixed(0) : value.toStringAsFixed(2);
     return '₱$text';
   }
 
-  Future<void> _openCustomizationWeb() async {
-    final args = ModalRoute.of(context)?.settings.arguments;
-    final detailArgs = args is ProductDetailArgs ? args : null;
-    final result = await Navigator.of(context).push<Map<String, dynamic>>(
-      MaterialPageRoute(
-        builder: (_) => MobileWebViewScreen(
-          title: '3D Customizer',
-          initialUrl: AppLinks.customizeUrl,
-          mode: MobileWebViewMode.customizer,
-          productId: detailArgs?.itemId,
-        ),
-      ),
-    );
-    if (!mounted) return;
-    if (result != null && result.isNotEmpty) {
-      final design = CustomDesignDraft.fromCustomizerResult(result);
-      if (design.designId.isNotEmpty) {
-        await Navigator.pushNamed(
-          context,
-          PaymentSubmissionScreen.routeName,
-          arguments: PaymentSubmissionArgs.customDesign(design: design),
-        );
-      } else {
-        final messenger = ScaffoldMessenger.of(context);
-        messenger.hideCurrentSnackBar();
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Design synced back to the app.')),
-        );
-      }
-    }
-  }
 }

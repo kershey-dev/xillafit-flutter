@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:xillafit_flutter/app_spacing.dart';
@@ -7,13 +9,25 @@ import 'package:xillafit_flutter/widgets/app_styles.dart';
 import 'package:xillafit_flutter/widgets/common/primary_button.dart';
 import 'package:xillafit_flutter/widgets/common/quantity_stepper.dart';
 
-class CartPlaceholderScreen extends ConsumerWidget {
+class CartPlaceholderScreen extends ConsumerStatefulWidget {
   static const routeName = '/cart';
 
   const CartPlaceholderScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<CartPlaceholderScreen> createState() =>
+      _CartPlaceholderScreenState();
+}
+
+class _CartPlaceholderScreenState extends ConsumerState<CartPlaceholderScreen> {
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() => ref.read(cartProvider.notifier).refreshCart());
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final cartState = ref.watch(cartProvider);
     final lines = cartState.items;
     final subtotal = ref.watch(cartSubtotalProvider);
@@ -97,19 +111,14 @@ class CartPlaceholderScreen extends ConsumerWidget {
                       Container(
                         width: 68,
                         height: 68,
-                        clipBehavior: Clip.antiAlias,
                         decoration: BoxDecoration(
                           color: AppColors.surfaceWarm,
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: (line.item.previewImageUrl ?? '').isNotEmpty
-                            ? Image.network(
-                                line.item.previewImageUrl!,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) =>
-                                    const Icon(Icons.checkroom_rounded),
-                              )
-                            : const Icon(Icons.checkroom_rounded),
+                        child: Padding(
+                          padding: const EdgeInsets.all(6),
+                          child: _CartPreviewImage(imageUrl: line.item.previewImageUrl),
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -223,6 +232,39 @@ class CartPlaceholderScreen extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _CartPreviewImage extends StatelessWidget {
+  const _CartPreviewImage({required this.imageUrl});
+
+  final String? imageUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final source = (imageUrl ?? '').trim();
+    if (source.isEmpty) {
+      return const Icon(Icons.checkroom_rounded);
+    }
+
+    if (source.startsWith('data:image/')) {
+      try {
+        final encoded = source.split(',').last;
+        return Image.memory(
+          base64Decode(encoded),
+          fit: BoxFit.contain,
+          errorBuilder: (_, _, _) => const Icon(Icons.checkroom_rounded),
+        );
+      } catch (_) {
+        return const Icon(Icons.checkroom_rounded);
+      }
+    }
+
+    return Image.network(
+      source,
+      fit: BoxFit.contain,
+      errorBuilder: (_, _, _) => const Icon(Icons.checkroom_rounded),
     );
   }
 }

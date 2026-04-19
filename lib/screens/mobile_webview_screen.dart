@@ -6,9 +6,10 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:xillafit_flutter/core/config/app_links.dart';
-import 'package:xillafit_flutter/features/checkout/data/checkout_repository.dart';
 import 'package:xillafit_flutter/core/links/mobile_link_handler.dart';
-import 'package:xillafit_flutter/screens/payment_submission_screen.dart';
+import 'package:xillafit_flutter/features/checkout/data/checkout_repository.dart';
+import 'package:xillafit_flutter/screens/cart_placeholder_screen.dart';
+import 'package:xillafit_flutter/screens/main_shell.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
 
 enum MobileWebViewMode { customizer, payment }
@@ -20,24 +21,26 @@ class MobileWebViewScreen extends StatefulWidget {
     required this.initialUrl,
     required this.mode,
     this.productId,
-    this.popOnCustomizerSave = true,
   });
 
   final String title;
   final String initialUrl;
   final MobileWebViewMode mode;
   final String? productId;
-  final bool popOnCustomizerSave;
 
   @override
   State<MobileWebViewScreen> createState() => _MobileWebViewScreenState();
 }
 
 class _MobileWebViewScreenState extends State<MobileWebViewScreen> {
+  static const _pageLoadTimeout = Duration(seconds: 18);
+
   WebViewController? _controller;
   int _loadingProgress = 0;
   bool _pageLoading = true;
   String? _pageError;
+  bool _hasRenderedPage = false;
+  Timer? _pageLoadTimeoutTimer;
 
   bool get _supportsEmbeddedWebView {
     return defaultTargetPlatform == TargetPlatform.android ||
@@ -62,19 +65,40 @@ class _MobileWebViewScreenState extends State<MobileWebViewScreen> {
               setState(() => _loadingProgress = progress);
             },
             onPageStarted: (_) {
+              _pageLoadTimeoutTimer?.cancel();
+              _pageLoadTimeoutTimer = Timer(_pageLoadTimeout, _handlePageLoadTimeout);
               if (!mounted) return;
               setState(() {
+                _hasRenderedPage = false;
                 _pageLoading = true;
                 _pageError = null;
               });
             },
             onPageFinished: (_) async {
+              _pageLoadTimeoutTimer?.cancel();
               await _injectMobileLayoutOptimizations();
               await _injectSessionBridge();
+              await _debugBridgeAvailability();
               if (!mounted) return;
-              setState(() => _pageLoading = false);
+              setState(() {
+                _hasRenderedPage = true;
+                _pageLoading = false;
+                _pageError = null;
+              });
             },
             onWebResourceError: (error) {
+              _pageLoadTimeoutTimer?.cancel();
+              final isMainFrame = error.isForMainFrame ?? true;
+              if (!isMainFrame || _hasRenderedPage) {
+                debugPrint(
+                  '[WEBVIEW] ignoring non-fatal resource error '
+                  'mainFrame=$isMainFrame '
+                  'url=${error.url} '
+                  'code=${error.errorCode} '
+                  'description=${error.description}',
+                );
+                return;
+              }
               if (!mounted) return;
               setState(() {
                 _pageLoading = false;
@@ -90,6 +114,21 @@ class _MobileWebViewScreenState extends State<MobileWebViewScreen> {
     }
   }
 
+  void _handlePageLoadTimeout() {
+    if (!mounted || !_pageLoading) return;
+    final target = Uri.tryParse(widget.initialUrl);
+    final host = target?.host ?? widget.initialUrl;
+    final message =
+        'This page is taking too long to load. If you are using local dev, make '
+        'sure the React Vite server is running on 0.0.0.0:5173 so Android can '
+        'reach it through 10.0.2.2. Current target: $host';
+
+    setState(() {
+      _pageLoading = false;
+      _pageError = message;
+    });
+  }
+
   Future<void> _loadInitialRequest() async {
     final controller = _controller;
     if (controller == null) return;
@@ -102,18 +141,27 @@ class _MobileWebViewScreenState extends State<MobileWebViewScreen> {
       'embedded': '1',
       'app_mode': 'embedded',
       'platform': _platformLabel,
+      'api_url': AppLinks.backendApiUrl.replaceAll(RegExp(r'/+$'), ''),
       'auth_bridge': AppLinks.authCallbackUrl(),
     };
-    if (widget.mode == MobileWebViewMode.customizer &&
-        (session?.accessToken ?? '').isNotEmpty) {
-      query['token'] = session!.accessToken;
+    if (widget.mode == MobileWebViewMode.customizer) {
       query['return_url'] = AppLinks.customizerCallbackUrl(
         saved: true,
         productId: widget.productId,
       );
+      if ((widget.productId ?? '').trim().isNotEmpty) {
+        query['productId'] = widget.productId!.trim();
+      }
     }
-    if ((widget.productId ?? '').trim().isNotEmpty) {
-      query['productId'] = widget.productId!.trim();
+    if ((session?.accessToken ?? '').isNotEmpty) {
+      query['token'] = session!.accessToken;
+    }
+    if (widget.mode == MobileWebViewMode.customizer &&
+        (query['return_url'] ?? '').isEmpty) {
+      query['return_url'] = AppLinks.customizerCallbackUrl(
+        saved: true,
+        productId: widget.productId,
+      );
     }
 
     final requestUri = baseUri.replace(queryParameters: query);
@@ -126,6 +174,13 @@ class _MobileWebViewScreenState extends State<MobileWebViewScreen> {
       'X-Xillafit-Platform': _platformLabel,
     };
 
+    debugPrint(
+      '[WEBVIEW] loadRequest '
+      'initialUrl=${widget.initialUrl} '
+      'requestUri=$requestUri '
+      'hasToken=${(session?.accessToken ?? '').isNotEmpty} '
+      'mode=${widget.mode.name}',
+    );
     await controller.loadRequest(requestUri, headers: headers);
   }
 
@@ -295,15 +350,24 @@ class _MobileWebViewScreenState extends State<MobileWebViewScreen> {
         productId: widget.productId,
       ),
     });
+    final customerSessionPayload = jsonEncode({
+      'access_token': session.accessToken,
+      'refresh_token': session.refreshToken,
+      'expires_at': session.expiresAt,
+      'token_type': session.tokenType,
+      'user': session.user.toJson(),
+    });
 
     try {
       await controller.runJavaScript('''
         (function() {
           try {
             const payload = $payload;
+            const customerSession = $customerSessionPayload;
             window.localStorage.setItem('xillafit.mobile.session', JSON.stringify(payload));
             window.localStorage.setItem('xillafit.mobile.access_token', payload.accessToken || '');
             window.localStorage.setItem('xillafit.mobile.refresh_token', payload.refreshToken || '');
+            window.localStorage.setItem('sb-customer-auth', JSON.stringify(customerSession));
             window.dispatchEvent(new CustomEvent('xillafit-mobile-session', { detail: payload }));
             window.__xillafitMobileSession = payload;
           } catch (error) {
@@ -313,6 +377,20 @@ class _MobileWebViewScreenState extends State<MobileWebViewScreen> {
       ''');
     } catch (error) {
       debugPrint('[WEBVIEW] session injection failed error=$error');
+    }
+  }
+
+  Future<void> _debugBridgeAvailability() async {
+    final controller = _controller;
+    if (controller == null) return;
+
+    try {
+      final bridgeType = await controller.runJavaScriptReturningResult(
+        'typeof window.XillafitBridge === "undefined" ? "missing" : typeof window.XillafitBridge.postMessage',
+      );
+      debugPrint('[WEBVIEW] bridge availability result=$bridgeType');
+    } catch (error) {
+      debugPrint('[WEBVIEW] bridge availability check failed error=$error');
     }
   }
 
@@ -331,51 +409,7 @@ class _MobileWebViewScreenState extends State<MobileWebViewScreen> {
       return NavigationDecision.prevent;
     }
 
-    if (widget.mode == MobileWebViewMode.customizer &&
-        !_isAllowedCustomizerNavigation(uri)) {
-      _showBlockedRouteMessage();
-      return NavigationDecision.prevent;
-    }
-
     return NavigationDecision.navigate;
-  }
-
-  bool _isAllowedCustomizerNavigation(Uri uri) {
-    if (uri.scheme == 'about' || uri.scheme == 'data' || uri.scheme == 'javascript') {
-      return true;
-    }
-
-    if (uri.scheme == AppLinks.mobileScheme) {
-      return uri.host == AppLinks.customizerHost ||
-          uri.host == AppLinks.authHost ||
-          uri.host == AppLinks.paymentHost;
-    }
-
-    final initialUri = Uri.parse(widget.initialUrl);
-    final siteUri = Uri.parse(AppLinks.siteUrl);
-    final allowedHosts = <String>{initialUri.host, siteUri.host};
-
-    if (!allowedHosts.contains(uri.host)) {
-      return false;
-    }
-
-    final path = uri.path.toLowerCase();
-    final initialPath = initialUri.path.toLowerCase();
-    return path == initialPath ||
-        path.startsWith('$initialPath/') ||
-        path == AppLinks.authBridgePath ||
-        path == AppLinks.paymentBridgePath;
-  }
-
-  void _showBlockedRouteMessage() {
-    if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      const SnackBar(
-        content: Text('This mobile flow only allows the embedded customizer.'),
-      ),
-    );
   }
 
   Future<void> _handleMobileUri(Uri uri) async {
@@ -392,7 +426,8 @@ class _MobileWebViewScreenState extends State<MobileWebViewScreen> {
   }
 
   bool _isCustomizerCallback(Uri uri) {
-    if (uri.scheme == AppLinks.mobileScheme && uri.host == AppLinks.customizerHost) {
+    if (uri.scheme == AppLinks.mobileScheme &&
+        uri.host == AppLinks.customizerHost) {
       return true;
     }
 
@@ -404,50 +439,95 @@ class _MobileWebViewScreenState extends State<MobileWebViewScreen> {
   }
 
   void _completeCustomizerFromUri(Uri uri) {
-    _handleCustomizerResult({
+    if (!mounted) return;
+    _deliverCustomizerResult({
       ...uri.queryParameters,
       'saved': uri.queryParameters['saved'] ?? 'true',
     });
   }
 
-  Future<void> _handleCustomizerResult(Map<String, dynamic> payload) async {
+  void _deliverCustomizerResult(Map<String, dynamic> payload) {
     if (!mounted) return;
 
-    final navigator = Navigator.of(context);
-    if (widget.popOnCustomizerSave && navigator.canPop()) {
-      navigator.pop<Map<String, dynamic>>(payload);
+    debugPrint('[WEBVIEW] deliver customizer result payload=$payload');
+
+    final localNavigator = Navigator.of(context);
+    if (localNavigator.canPop()) {
+      debugPrint('[WEBVIEW] popping webview with customizer result');
+      localNavigator.pop<Map<String, dynamic>>(payload);
       return;
     }
 
     final design = CustomDesignDraft.fromCustomizerResult(payload);
     if (design.designId.isEmpty) {
-      final messenger = ScaffoldMessenger.of(context);
-      messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
+      debugPrint('[WEBVIEW] customizer result has no designId');
+      ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Design synced back to the app.')),
       );
       return;
     }
 
-    await navigator.pushNamed(
-      PaymentSubmissionScreen.routeName,
-      arguments: PaymentSubmissionArgs.customDesign(design: design),
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Design received. Opening cart...')),
     );
+    debugPrint(
+      '[WEBVIEW] pushing payment screen designId=${design.designId} '
+      'name=${design.name} garmentType=${design.garmentType}',
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final rootNavigator = Navigator.of(context, rootNavigator: true);
+      debugPrint(
+        '[WEBVIEW] root push cart screen '
+        'canPop=${rootNavigator.canPop()} '
+        'route=${CartPlaceholderScreen.routeName}',
+      );
+      unawaited(_openCheckoutFromEmbeddedCustomizer(rootNavigator, design));
+    });
+  }
+
+  Future<void> _openCheckoutFromEmbeddedCustomizer(
+    NavigatorState navigator,
+    CustomDesignDraft design,
+  ) async {
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    if (!mounted) return;
+
+    try {
+      await navigator.pushNamedAndRemoveUntil(
+        CartPlaceholderScreen.routeName,
+        (route) => route.settings.name == MainShell.routeName || route.isFirst,
+      );
+      debugPrint('[WEBVIEW] cart screen completed');
+    } catch (error, stackTrace) {
+      debugPrint('[WEBVIEW] cart screen push failed error=$error');
+      debugPrint('$stackTrace');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open cart: $error')),
+      );
+    }
   }
 
   void _handleBridgeMessage(JavaScriptMessage message) {
     try {
+      debugPrint('[WEBVIEW] bridge raw message=${message.message}');
       final decoded = jsonDecode(message.message);
       if (decoded is! Map<String, dynamic>) return;
       final type = decoded['type']?.toString();
+      debugPrint('[WEBVIEW] bridge message type=$type');
       if (type == 'designSaved' || type == 'design_saved') {
-        unawaited(
-          _handleCustomizerResult(
-            Map<String, dynamic>.from(decoded['payload'] as Map? ?? const {}),
-          ),
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Customizer save received by app.')),
+        );
+        _deliverCustomizerResult(
+          Map<String, dynamic>.from(decoded['payload'] as Map? ?? const {}),
         );
       } else if (type == 'auth') {
-        final payload = Map<String, dynamic>.from(decoded['payload'] as Map? ?? const {});
+        final payload = Map<String, dynamic>.from(
+          decoded['payload'] as Map? ?? const {},
+        );
         final uri = Uri.parse(
           AppLinks.authCallbackUrl(
             queryParameters: payload.map(
@@ -457,7 +537,9 @@ class _MobileWebViewScreenState extends State<MobileWebViewScreen> {
         );
         unawaited(_handleMobileUri(uri));
       } else if (type == 'paymentReturn') {
-        final payload = Map<String, dynamic>.from(decoded['payload'] as Map? ?? const {});
+        final payload = Map<String, dynamic>.from(
+          decoded['payload'] as Map? ?? const {},
+        );
         final success = payload['success']?.toString() != 'false';
         final uri = Uri.parse(
           AppLinks.paymentCallbackUrl(
@@ -491,6 +573,12 @@ class _MobileWebViewScreenState extends State<MobileWebViewScreen> {
   }
 
   @override
+  void dispose() {
+    _pageLoadTimeoutTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.surface,
@@ -508,9 +596,10 @@ class _MobileWebViewScreenState extends State<MobileWebViewScreen> {
           if (_pageLoading || _loadingProgress < 100)
             LinearProgressIndicator(
               minHeight: 2,
-              value: _loadingProgress == 0 || _loadingProgress == 100
-                  ? null
-                  : _loadingProgress / 100,
+              value:
+                  _loadingProgress == 0 || _loadingProgress == 100
+                      ? null
+                      : _loadingProgress / 100,
               color: AppColors.gold,
             ),
           Expanded(

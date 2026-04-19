@@ -1,13 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:xillafit_flutter/core/config/app_links.dart';
 import 'package:xillafit_flutter/features/catalog/data/category_model.dart';
 import 'package:xillafit_flutter/features/catalog/data/clothing_item_model.dart';
 import 'package:xillafit_flutter/features/catalog/presentation/catalog_providers.dart';
 import 'package:xillafit_flutter/features/cart/presentation/cart_provider.dart';
-import 'package:xillafit_flutter/features/checkout/data/checkout_repository.dart';
-import 'package:xillafit_flutter/screens/mobile_webview_screen.dart';
-import 'package:xillafit_flutter/screens/payment_submission_screen.dart';
 import 'package:xillafit_flutter/screens/product_detail_screen.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
 
@@ -100,8 +96,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       _flashHeader(),
                       const SizedBox(height: 12),
                       _flashGrid(flashItems, categories),
-                      const SizedBox(height: 22),
-                      _customizeCard(),
                     ]),
                   ),
                 ),
@@ -632,64 +626,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _customizeCard() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.gold,
-        borderRadius: BorderRadius.circular(26),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x26F59E0B),
-            blurRadius: 24,
-            offset: Offset(0, 12),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Need full customization?',
-            style: AppTextStyles.body.copyWith(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              color: AppColors.text,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Open the web studio for full 3D customization, design review, and advanced team ordering.',
-            style: AppTextStyles.body.copyWith(
-              color: AppColors.text.withValues(alpha: 0.82),
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              height: 1.45,
-            ),
-          ),
-          const SizedBox(height: 14),
-          GestureDetector(
-            onTap: _openCustomizationWeb,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                'Start customizing',
-                style: AppTextStyles.body.copyWith(
-                  color: AppColors.text,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _circleButton({required IconData icon, required VoidCallback onTap}) {
     return GestureDetector(
       onTap: onTap,
@@ -772,46 +708,4 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     widget.onOpenCart?.call();
   }
 
-  void _focusSearch() {
-    if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        0,
-        duration: const Duration(milliseconds: 280),
-        curve: Curves.easeOutCubic,
-      );
-    }
-    Future<void>.delayed(const Duration(milliseconds: 60), () {
-      if (!mounted) return;
-      _searchFocusNode.requestFocus();
-    });
-  }
-
-  Future<void> _openCustomizationWeb() async {
-    final result = await Navigator.of(context).push<Map<String, dynamic>>(
-      MaterialPageRoute(
-        builder: (_) => const MobileWebViewScreen(
-          title: '3D Customizer',
-          initialUrl: AppLinks.customizeUrl,
-          mode: MobileWebViewMode.customizer,
-        ),
-      ),
-    );
-    if (!mounted) return;
-    if (result != null && result.isNotEmpty) {
-      final design = CustomDesignDraft.fromCustomizerResult(result);
-      if (design.designId.isNotEmpty) {
-        await Navigator.pushNamed(
-          context,
-          PaymentSubmissionScreen.routeName,
-          arguments: PaymentSubmissionArgs.customDesign(design: design),
-        );
-      } else {
-        final messenger = ScaffoldMessenger.of(context);
-        messenger.hideCurrentSnackBar();
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Design synced back to the app.')),
-        );
-      }
-    }
-  }
 }

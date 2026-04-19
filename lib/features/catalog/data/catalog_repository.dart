@@ -27,9 +27,7 @@ class CatalogRepository {
         .order('created_at', ascending: false);
 
     if ((availableData as List).isNotEmpty) {
-      return availableData
-          .map((row) => ClothingItemModel.fromMap(Map<String, dynamic>.from(row as Map)))
-          .toList();
+      return _withRatings(availableData);
     }
 
     final fallbackData = await _client
@@ -37,9 +35,7 @@ class CatalogRepository {
         .select(_catalogFields)
         .order('created_at', ascending: false);
 
-    return (fallbackData as List)
-        .map((row) => ClothingItemModel.fromMap(Map<String, dynamic>.from(row as Map)))
-        .toList();
+    return _withRatings(fallbackData as List);
   }
 
   Future<List<ClothingItemModel>> fetchItemsByCategory(String categoryId) async {
@@ -51,9 +47,7 @@ class CatalogRepository {
         .order('created_at', ascending: false);
 
     if ((availableData as List).isNotEmpty) {
-      return availableData
-          .map((row) => ClothingItemModel.fromMap(Map<String, dynamic>.from(row as Map)))
-          .toList();
+      return _withRatings(availableData);
     }
 
     final fallbackData = await _client
@@ -62,9 +56,7 @@ class CatalogRepository {
         .eq('category_id', categoryId)
         .order('created_at', ascending: false);
 
-    return (fallbackData as List)
-        .map((row) => ClothingItemModel.fromMap(Map<String, dynamic>.from(row as Map)))
-        .toList();
+    return _withRatings(fallbackData as List);
   }
 
   Future<ClothingItemModel?> fetchItemById(String id) async {
@@ -75,6 +67,81 @@ class CatalogRepository {
         .maybeSingle();
 
     if (data == null) return null;
-    return ClothingItemModel.fromMap(Map<String, dynamic>.from(data as Map));
+    final items = await _withRatings([data]);
+    return items.isEmpty ? null : items.first;
+  }
+
+  Future<List<ClothingItemModel>> _withRatings(List rows) async {
+    final itemMaps = rows
+        .map((row) => Map<String, dynamic>.from(row as Map))
+        .toList(growable: false);
+    final ratingMap = await _fetchRatingsByProductIds(
+      itemMaps.map((row) => row['id']?.toString() ?? '').where((id) => id.isNotEmpty).toSet(),
+    );
+
+    return itemMaps.map((row) {
+      final id = row['id']?.toString() ?? '';
+      final rating = ratingMap[id];
+      return ClothingItemModel.fromMap({
+        ...row,
+        'avg_rating': rating?.avgRating ?? row['avg_rating'],
+        'review_count': rating?.reviewCount ?? row['review_count'],
+      });
+    }).toList(growable: false);
+  }
+
+  Future<Map<String, _ProductRatingAggregate>> _fetchRatingsByProductIds(Set<String> ids) async {
+    if (ids.isEmpty) return const {};
+
+    try {
+      final data = await _client
+          .from('feedback')
+          .select('rating, orders(order_items(clothing_item_id))');
+
+      final aggregates = <String, _ProductRatingAggregate>{};
+      for (final row in (data as List)) {
+        final feedback = Map<String, dynamic>.from(row as Map);
+        final ratingValue = feedback['rating'];
+        final rating = ratingValue is num
+            ? ratingValue.toDouble()
+            : double.tryParse('${feedback['rating']}');
+        if (rating == null) continue;
+
+        final orders = feedback['orders'];
+        final orderMap = orders is Map ? Map<String, dynamic>.from(orders) : null;
+        final orderItems = orderMap?['order_items'];
+        if (orderItems is! List) continue;
+
+        for (final item in orderItems) {
+          final orderItem = item is Map ? Map<String, dynamic>.from(item) : const <String, dynamic>{};
+          final productId = orderItem['clothing_item_id']?.toString();
+          if (productId == null || !ids.contains(productId)) continue;
+          final current = aggregates[productId] ?? const _ProductRatingAggregate();
+          aggregates[productId] = current.add(rating);
+        }
+      }
+      return aggregates;
+    } catch (_) {
+      return const {};
+    }
+  }
+}
+
+class _ProductRatingAggregate {
+  const _ProductRatingAggregate({
+    this.total = 0,
+    this.reviewCount = 0,
+  });
+
+  final double total;
+  final int reviewCount;
+
+  double get avgRating => reviewCount == 0 ? 0 : double.parse((total / reviewCount).toStringAsFixed(1));
+
+  _ProductRatingAggregate add(double rating) {
+    return _ProductRatingAggregate(
+      total: total + rating,
+      reviewCount: reviewCount + 1,
+    );
   }
 }
