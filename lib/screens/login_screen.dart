@@ -106,7 +106,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   String? _validatePassword(String v) {
     if (v.isEmpty) return 'Password is required';
-    if (v.length < 6) return 'Password must be at least 6 characters';
+    if (v.length < 8) return 'Password must be at least 8 characters';
+    if (!RegExp(r'[A-Z]').hasMatch(v)) {
+      return 'Password must include at least one uppercase letter';
+    }
+    if (!RegExp(r'[a-z]').hasMatch(v)) {
+      return 'Password must include at least one lowercase letter';
+    }
+    if (!RegExp(r'\d').hasMatch(v)) {
+      return 'Password must include at least one number';
+    }
     return null;
   }
 
@@ -127,6 +136,39 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (_tab != AuthTab.register) return null;
     if (v.trim().isEmpty) return 'Street / House No. is required';
     return null;
+  }
+
+  bool _hasStepOneValidationIssues({
+    required String? emailErr,
+    required String? passErr,
+    required String? confirmPasswordErr,
+  }) {
+    return emailErr != null || passErr != null || confirmPasswordErr != null;
+  }
+
+  void _moveToRegisterStepOneForErrors() {
+    if (_tab != AuthTab.register) return;
+    if (_registerStep != 1) {
+      _registerStep = 1;
+    }
+  }
+
+  String _friendlyRegisterErrorMessage(AuthException error) {
+    final message = error.message.trim();
+    final lower = message.toLowerCase();
+
+    if (lower.contains('already registered') ||
+        lower.contains('already been registered') ||
+        lower.contains('user already registered') ||
+        lower.contains('already exists')) {
+      return 'That email is already registered. Please sign in instead.';
+    }
+
+    if (lower.contains('password')) {
+      return 'Your password does not meet the required format.';
+    }
+
+    return message;
   }
 
   Future<void> _submit() async {
@@ -153,6 +195,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         barangayErr != null ||
         streetAddressErr != null) {
       setState(() {
+        if (_hasStepOneValidationIssues(
+          emailErr: emailErr,
+          passErr: passErr,
+          confirmPasswordErr: confirmPasswordErr,
+        )) {
+          _moveToRegisterStepOneForErrors();
+        }
         _emailError = emailErr;
         _passwordError = passErr;
         _confirmPasswordError = confirmPasswordErr;
@@ -203,7 +252,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       }
     } on AuthException catch (e) {
       if (mounted) {
-        setState(() => _formError = e.message);
+        final friendlyMessage = _friendlyRegisterErrorMessage(e);
+        final lower = friendlyMessage.toLowerCase();
+        setState(() {
+          if (_tab == AuthTab.register &&
+              (lower.contains('email') || lower.contains('password'))) {
+            _moveToRegisterStepOneForErrors();
+          }
+          if (lower.contains('already registered')) {
+            _emailError = 'That email is already registered';
+          } else if (lower.contains('password')) {
+            _passwordError = friendlyMessage;
+          }
+          _formError = friendlyMessage;
+        });
       }
     } catch (e) {
       if (mounted) {
@@ -257,9 +319,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     FocusScope.of(context).unfocus();
     _clearFieldErrors();
     final emailErr = _validateEmail(_emailController.text);
-    if (emailErr != null) {
+    final passErr = _validatePassword(_passwordController.text);
+    final confirmPasswordErr =
+        _validateConfirmPassword(_confirmPasswordController.text);
+    if (emailErr != null || passErr != null || confirmPasswordErr != null) {
       setState(() {
         _emailError = emailErr;
+        _passwordError = passErr;
+        _confirmPasswordError = confirmPasswordErr;
       });
       return;
     }

@@ -140,7 +140,8 @@ class _VerticalTrackingStepper extends StatelessWidget {
   final List<TrackingStepData> steps;
   static const double _railWidth = 28;
   static const double _circleSize = 20;
-  static const double _connectorWidth = 2;
+  static const double _connectorWidth = 3;
+  static const double _rowSpacing = 14;
 
   @override
   Widget build(BuildContext context) {
@@ -149,91 +150,73 @@ class _VerticalTrackingStepper extends StatelessWidget {
         final step = steps[index];
         final isLast = index == steps.length - 1;
 
-        return IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: _railWidth,
-                child: Stack(
-                  alignment: Alignment.topCenter,
-                  children: [
-                    if (!isLast)
-                      Positioned(
-                        top: _circleSize,
-                        bottom: 0,
-                        child: Container(
-                          width: _connectorWidth,
-                          decoration: BoxDecoration(
-                            color: AppColors.border,
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                        ),
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: _railWidth,
+              child: Column(
+                children: [
+                  Container(
+                    width: _circleSize,
+                    height: _circleSize,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _circleColor(step),
+                      border: Border.all(
+                        color: _borderColor(step),
+                        width: 2,
                       ),
-                    if (!isLast && (step.done || step.active))
-                      Positioned(
-                        top: _circleSize,
-                        bottom: 0,
-                        child: Container(
-                          width: _connectorWidth,
-                          decoration: BoxDecoration(
-                            color: step.done ? AppColors.success : AppColors.gold,
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                        ),
-                      ),
-                    Container(
-                      width: _circleSize,
-                      height: _circleSize,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: _circleColor(step),
-                        border: Border.all(
-                          color: _borderColor(step),
-                          width: 2,
-                        ),
-                      ),
-                      child: Center(
-                        child: Text(
-                          step.done ? 'v' : '',
-                          style: AppTextStyles.caption.copyWith(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                          ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        step.done ? 'v' : '',
+                        style: AppTextStyles.caption.copyWith(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
+                  ),
+                  if (!isLast)
+                    Container(
+                      width: _connectorWidth,
+                      height: _rowSpacing,
+                      decoration: BoxDecoration(
+                        color: step.done ? AppColors.success : AppColors.border,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(bottom: isLast ? 0 : _rowSpacing),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      step.label,
+                      style: AppTextStyles.body.copyWith(
+                        fontWeight: step.active ? FontWeight.w800 : FontWeight.w700,
+                        color: AppColors.text,
+                      ),
+                    ),
+                    if (step.date != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        step.date!,
+                        style: AppTextStyles.caption,
+                      ),
+                    ],
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Padding(
-                  padding: EdgeInsets.only(bottom: isLast ? 0 : 14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        step.label,
-                        style: AppTextStyles.body.copyWith(
-                          fontWeight: step.active ? FontWeight.w800 : FontWeight.w700,
-                          color: AppColors.text,
-                        ),
-                      ),
-                      if (step.date != null) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          step.date!,
-                          style: AppTextStyles.caption,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         );
       }),
     );

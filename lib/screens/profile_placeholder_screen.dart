@@ -83,7 +83,52 @@ class _ProfilePlaceholderScreenState
     setState(_clearPasswordFeedback);
   }
 
+  Future<bool> _showConfirmationDialog({
+    required String title,
+    required String message,
+    required String confirmLabel,
+    bool isDestructive = false,
+  }) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: isDestructive ? Colors.red.shade600 : AppColors.gold,
+                foregroundColor:
+                    isDestructive ? Colors.white : AppColors.text,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(confirmLabel),
+            ),
+          ],
+        );
+      },
+    );
+
+    return confirmed == true;
+  }
+
   Future<void> _signOut() async {
+    final confirmed = await _showConfirmationDialog(
+      title: 'Sign out?',
+      message: 'You will be signed out from this device and will need to log in again to continue.',
+      confirmLabel: 'Sign out',
+      isDestructive: true,
+    );
+    if (!confirmed || !mounted) return;
+
     setState(() => _loading = true);
     try {
       await ref.read(authRepositoryProvider).signOut();
@@ -257,6 +302,15 @@ class _ProfilePlaceholderScreenState
         return;
       }
     }
+
+    final confirmed = await _showConfirmationDialog(
+      title: mode == 'social' ? 'Add password?' : 'Update password?',
+      message: mode == 'social'
+          ? 'This will add an email password to your account so you can sign in with either Google or email.'
+          : 'Your account password will be changed. Make sure you remember the new password before continuing.',
+      confirmLabel: mode == 'social' ? 'Add password' : 'Update password',
+    );
+    if (!confirmed || !mounted) return;
 
     setState(() => _passwordSaving = true);
     try {

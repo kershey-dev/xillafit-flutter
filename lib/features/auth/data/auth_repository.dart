@@ -39,29 +39,28 @@ class AuthRepository {
     required String zipCode,
   }) async {
     final normalizedEmail = email.trim();
+    final trimmedFullName = fullName?.trim();
+    final trimmedMunicipality = municipality.trim();
+    final trimmedBarangay = barangay.trim();
+    final trimmedStreetAddress = streetAddress.trim();
+    final trimmedZipCode = zipCode.trim();
     debugPrint('[AUTH] signUpWithEmail() attempt: email=$normalizedEmail');
     final response = await _client.auth.signUp(
       email: normalizedEmail,
       password: password,
       data: {
-        if ((fullName ?? '').trim().isNotEmpty) 'full_name': fullName!.trim(),
+        if ((trimmedFullName ?? '').isNotEmpty) 'full_name': trimmedFullName,
+        'municipality': trimmedMunicipality,
+        'barangay': trimmedBarangay,
+        'street_address': trimmedStreetAddress,
+        'zip_code': trimmedZipCode,
+        'province': 'Bulacan',
       },
     );
     debugPrint(
       '[AUTH] signUpWithEmail() response: '
       'hasSession=${response.session != null}, userId=${response.user?.id}',
     );
-    final userId = response.user?.id;
-    if (userId != null) {
-      await _client.from('customer_profiles').upsert({
-        'profile_id': userId,
-        'municipality': municipality,
-        'barangay': barangay,
-        'street_address': streetAddress.trim(),
-        'zip_code': zipCode,
-        'province': 'Bulacan',
-      }, onConflict: 'profile_id');
-    }
     return response;
   }
 
