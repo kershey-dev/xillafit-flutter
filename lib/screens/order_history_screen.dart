@@ -1,17 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:xillafit_flutter/core/network/connectivity_status.dart';
 import 'package:xillafit_flutter/features/orders/data/order_repository.dart';
 import 'package:xillafit_flutter/screens/order_tracking_screen.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
 import 'package:xillafit_flutter/widgets/common/app_card.dart';
 
-class OrderHistoryScreen extends ConsumerWidget {
+class OrderHistoryScreen extends ConsumerStatefulWidget {
   static const routeName = '/order-history';
 
   const OrderHistoryScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<OrderHistoryScreen> createState() => _OrderHistoryScreenState();
+}
+
+class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
+  bool? _lastOfflineState;
+
+  @override
+  Widget build(BuildContext context) {
+    final isOffline = ref.watch(isOfflineProvider).asData?.value ?? false;
+    _handleConnectivityTransition(isOffline);
     final ordersAsync = ref.watch(orderHistoryProvider);
 
     return Scaffold(
@@ -37,13 +47,22 @@ class OrderHistoryScreen extends ConsumerWidget {
             ),
           ),
         ),
-        data: (orders) {
+        data: (snapshot) {
+          final orders = snapshot.orders;
           final totalSpent = orders.fold<double>(0, (sum, item) => sum + item.grandTotal);
           return RefreshIndicator(
             onRefresh: () => ref.refresh(orderHistoryProvider.future),
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
               children: [
+                if (snapshot.fromCache)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _OfflineSnapshotCard(
+                      syncedAt: snapshot.syncedAt,
+                      message: 'Showing your last synced orders while offline.',
+                    ),
+                  ),
                 Row(
                   children: [
                     Expanded(
@@ -92,6 +111,72 @@ class OrderHistoryScreen extends ConsumerWidget {
             ),
           );
         },
+      ),
+    );
+  }
+
+  void _handleConnectivityTransition(bool isOffline) {
+    final previous = _lastOfflineState;
+    if (previous == null) {
+      _lastOfflineState = isOffline;
+      return;
+    }
+    if (previous && !isOffline) {
+      Future.microtask(() => ref.invalidate(orderHistoryProvider));
+    }
+    _lastOfflineState = isOffline;
+  }
+}
+
+class _OfflineSnapshotCard extends StatelessWidget {
+  const _OfflineSnapshotCard({
+    required this.message,
+    this.syncedAt,
+  });
+
+  final String message;
+  final DateTime? syncedAt;
+
+  @override
+  Widget build(BuildContext context) {
+    final syncedLabel = syncedAt == null ? null : formatOrderDateTime(syncedAt!.toLocal());
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF4E8),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFF5D1A7)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Offline snapshot',
+            style: AppTextStyles.body.copyWith(
+              color: AppColors.goldDark,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            message,
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.goldDark,
+              fontWeight: FontWeight.w700,
+              height: 1.4,
+            ),
+          ),
+          if (syncedLabel != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Last synced: $syncedLabel',
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.goldDark,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

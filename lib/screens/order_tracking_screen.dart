@@ -3,12 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:xillafit_flutter/core/network/connectivity_status.dart';
 import 'package:xillafit_flutter/core/payments/payment_session_store.dart';
 import 'package:xillafit_flutter/features/orders/data/order_repository.dart';
 import 'package:xillafit_flutter/screens/main_shell.dart';
 import 'package:xillafit_flutter/screens/mobile_webview_screen.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
 import 'package:xillafit_flutter/widgets/common/app_card.dart';
+import 'package:xillafit_flutter/widgets/common/cached_product_image.dart';
 import 'package:xillafit_flutter/widgets/common/progress_bar_x.dart';
 import 'package:xillafit_flutter/widgets/common/tracking_stepper.dart';
 
@@ -72,16 +74,16 @@ class OrderTrackingScreen extends ConsumerWidget {
             ),
           ),
         ),
-        data: (order) => _OrderTrackingBody(order: order),
+        data: (snapshot) => _OrderTrackingBody(snapshot: snapshot),
       ),
     );
   }
 }
 
 class _OrderTrackingBody extends ConsumerStatefulWidget {
-  const _OrderTrackingBody({required this.order});
+  const _OrderTrackingBody({required this.snapshot});
 
-  final OrderDetail order;
+  final OrderDetailSnapshot snapshot;
 
   @override
   ConsumerState<_OrderTrackingBody> createState() => _OrderTrackingBodyState();
@@ -92,6 +94,7 @@ class _OrderTrackingBodyState extends ConsumerState<_OrderTrackingBody> {
   bool _openingBalance = false;
   bool _waitingForBalanceReturn = false;
   RealtimeChannel? _realtimeChannel;
+  bool? _lastOfflineState;
 
   @override
   void initState() {
@@ -120,12 +123,12 @@ class _OrderTrackingBodyState extends ConsumerState<_OrderTrackingBody> {
 
   void _refreshOrderSilently() {
     if (!mounted) return;
-    ref.invalidate(orderDetailProvider(widget.order.summary.id));
+    ref.invalidate(orderDetailProvider(widget.snapshot.order.summary.id));
     ref.invalidate(orderHistoryProvider);
   }
 
   void _subscribeToOrderUpdates() {
-    final orderId = widget.order.summary.id;
+    final orderId = widget.snapshot.order.summary.id;
     final channel = Supabase.instance.client.channel('client-order-$orderId');
 
     channel
@@ -161,14 +164,14 @@ class _OrderTrackingBodyState extends ConsumerState<_OrderTrackingBody> {
     try {
       final result = await ref
           .read(orderRepositoryProvider)
-          .createBalanceCheckoutSession(widget.order.summary.id);
+          .createBalanceCheckoutSession(widget.snapshot.order.summary.id);
       if ((result.sessionId ?? '').trim().isNotEmpty) {
         await PaymentSessionStore.save(
           PendingPaymentSession(
             sessionId: result.sessionId!,
             flow: 'balance',
-            orderId: widget.order.summary.id,
-            referenceId: widget.order.summary.referenceNo,
+            orderId: widget.snapshot.order.summary.id,
+            referenceId: widget.snapshot.order.summary.referenceNo,
           ),
         );
       }
@@ -201,7 +204,9 @@ class _OrderTrackingBodyState extends ConsumerState<_OrderTrackingBody> {
 
   @override
   Widget build(BuildContext context) {
-    final order = widget.order;
+    final isOffline = ref.watch(isOfflineProvider).asData?.value ?? false;
+    _handleConnectivityTransition(isOffline);
+    final order = widget.snapshot.order;
     final summary = order.summary;
     final stepIndex = _stepIndexForStatus(summary.orderStatus);
     final progressValue = (stepIndex + 1) / _trackingSteps.length;
@@ -214,6 +219,14 @@ class _OrderTrackingBodyState extends ConsumerState<_OrderTrackingBody> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
         children: [
+          if (widget.snapshot.fromCache) ...[
+            _OfflineSnapshotCard(
+              syncedAt: widget.snapshot.syncedAt,
+              message:
+                  'Showing the last synced tracking timeline. Updates will refresh when you reconnect.',
+            ),
+            const SizedBox(height: 12),
+          ],
           AppCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -402,6 +415,72 @@ class _OrderTrackingBodyState extends ConsumerState<_OrderTrackingBody> {
       ),
     );
   }
+
+  void _handleConnectivityTransition(bool isOffline) {
+    final previous = _lastOfflineState;
+    if (previous == null) {
+      _lastOfflineState = isOffline;
+      return;
+    }
+    if (previous && !isOffline) {
+      Future.microtask(_refreshOrderSilently);
+    }
+    _lastOfflineState = isOffline;
+  }
+}
+
+class _OfflineSnapshotCard extends StatelessWidget {
+  const _OfflineSnapshotCard({
+    required this.message,
+    this.syncedAt,
+  });
+
+  final String message;
+  final DateTime? syncedAt;
+
+  @override
+  Widget build(BuildContext context) {
+    final syncedLabel = syncedAt == null ? null : formatOrderDateTime(syncedAt!.toLocal());
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF4E8),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFF5D1A7)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Offline snapshot',
+            style: AppTextStyles.body.copyWith(
+              color: AppColors.goldDark,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            message,
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.goldDark,
+              fontWeight: FontWeight.w700,
+              height: 1.4,
+            ),
+          ),
+          if (syncedLabel != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Last synced: $syncedLabel',
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.goldDark,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 class _OrderTrackingLifecycleObserver with WidgetsBindingObserver {
@@ -461,10 +540,10 @@ class _OrderItemTile extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
           ),
           child: (item.previewImageUrl ?? '').isNotEmpty
-              ? Image.network(
-                  item.previewImageUrl!,
+              ? CachedProductImage(
+                  imageUrl: item.previewImageUrl,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const Icon(Icons.checkroom_rounded),
+                  fallback: const Icon(Icons.checkroom_rounded),
                 )
               : const Icon(Icons.checkroom_rounded),
         ),

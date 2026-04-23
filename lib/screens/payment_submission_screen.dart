@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:xillafit_flutter/core/config/app_links.dart';
+import 'package:xillafit_flutter/core/network/connectivity_status.dart';
 import 'package:xillafit_flutter/core/payments/payment_session_store.dart';
 import 'package:xillafit_flutter/features/auth/data/bulacan_locations.dart';
 import 'package:xillafit_flutter/features/auth/presentation/auth_providers.dart';
@@ -11,6 +12,7 @@ import 'package:xillafit_flutter/features/profile/presentation/profile_providers
 import 'package:xillafit_flutter/screens/mobile_webview_screen.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
 import 'package:xillafit_flutter/widgets/common/app_card.dart';
+import 'package:xillafit_flutter/widgets/common/cached_product_image.dart';
 import 'package:xillafit_flutter/widgets/common/primary_button.dart';
 
 enum _PaymentType { deposit, full }
@@ -173,7 +175,7 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = error.toString();
+        _error = _friendlyCheckoutError(error);
       });
     }
   }
@@ -360,7 +362,7 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
     } catch (error) {
       await PaymentSessionStore.clear();
       if (!mounted) return;
-      setState(() => _error = error.toString());
+      setState(() => _error = _friendlyCheckoutError(error));
     } finally {
       if (mounted) {
         setState(() {
@@ -489,7 +491,7 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
     } catch (error) {
       await PaymentSessionStore.clear();
       if (!mounted) return;
-      setState(() => _error = error.toString());
+      setState(() => _error = _friendlyCheckoutError(error));
     } finally {
       if (mounted) {
         setState(() {
@@ -509,8 +511,20 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
     return raw;
   }
 
+  String _friendlyCheckoutError(Object error) {
+    final message = error.toString().toLowerCase();
+    if (message.contains('socketexception') ||
+        message.contains('failed host lookup') ||
+        message.contains('connection') ||
+        message.contains('network')) {
+      return 'You are offline. Reconnect to continue payment and refresh delivery details.';
+    }
+    return 'We couldn\'t prepare checkout right now. Please try again.';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isOffline = ref.watch(isOfflineProvider).asData?.value ?? false;
     final items = _resolveItems();
     final customDesign = _customDesign();
     final customUnitPrice = customDesign?.unitPrice ?? 350.0;
@@ -621,10 +635,10 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
                                       borderRadius: BorderRadius.circular(18),
                                     ),
                                     child: (customDesign.previewImage ?? '').isNotEmpty
-                                        ? Image.network(
-                                            customDesign.previewImage!,
+                                        ? CachedProductImage(
+                                            imageUrl: customDesign.previewImage,
                                             fit: BoxFit.cover,
-                                            errorBuilder: (_, _, _) => const Icon(Icons.style_rounded),
+                                            fallback: const Icon(Icons.style_rounded),
                                           )
                                         : const Icon(Icons.style_rounded, size: 32),
                                   ),
@@ -947,9 +961,42 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
                       ),
                       if (_error != null) ...[
                         const SizedBox(height: 12),
-                        Text(
-                          _error!,
-                          style: AppTextStyles.caption.copyWith(color: Colors.red.shade700),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF4E8),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFFF5D1A7)),
+                          ),
+                          child: Text(
+                            _error!,
+                            style: AppTextStyles.caption.copyWith(
+                              color: AppColors.goldDark,
+                              fontWeight: FontWeight.w700,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                      if (isOffline) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF4E8),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFFF5D1A7)),
+                          ),
+                          child: Text(
+                            'You can review your order offline, but payment needs an internet connection.',
+                            style: AppTextStyles.caption.copyWith(
+                              color: AppColors.goldDark,
+                              fontWeight: FontWeight.w700,
+                              height: 1.4,
+                            ),
+                          ),
                         ),
                       ],
                       const SizedBox(height: 16),
@@ -960,7 +1007,7 @@ class _PaymentSubmissionScreenState extends ConsumerState<PaymentSubmissionScree
                                 ? 'Waiting for payment confirmation...'
                                 : 'Proceed to Pay',
                         isLoading: _submitting || _waitingForPaymentReturn,
-                        onPressed: _submitting || _waitingForPaymentReturn
+                        onPressed: _submitting || _waitingForPaymentReturn || isOffline
                             ? null
                             : () => _submitCheckout(items),
                       ),
@@ -1291,10 +1338,10 @@ class _CheckoutItemTile extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
           ),
           child: (item.image ?? '').isNotEmpty
-              ? Image.network(
-                  item.image!,
+              ? CachedProductImage(
+                  imageUrl: item.image,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const Icon(Icons.checkroom_rounded),
+                  fallback: const Icon(Icons.checkroom_rounded),
                 )
               : const Icon(Icons.checkroom_rounded),
         ),
@@ -1404,10 +1451,10 @@ class _CustomDesignSummaryTile extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
           ),
           child: (design.previewImage ?? '').isNotEmpty
-              ? Image.network(
-                  design.previewImage!,
+              ? CachedProductImage(
+                  imageUrl: design.previewImage,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const Icon(Icons.style_rounded),
+                  fallback: const Icon(Icons.style_rounded),
                 )
               : const Icon(Icons.style_rounded),
         ),

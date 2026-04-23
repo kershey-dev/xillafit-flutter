@@ -8,26 +8,41 @@ import 'package:xillafit_flutter/features/catalog/presentation/catalog_providers
 import 'package:xillafit_flutter/features/cart/presentation/cart_provider.dart';
 import 'package:xillafit_flutter/screens/payment_submission_screen.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
+import 'package:xillafit_flutter/widgets/common/cached_product_image.dart';
 
 final productFabricOptionsProvider = FutureProvider.autoDispose<List<String>>((
   ref,
 ) async {
-  final api = ref.watch(backendApiClientProvider);
-  final data = await api.get('/inventory');
-  final rows = (data as List? ?? const <dynamic>[]);
   final options = <String>{};
+  try {
+    final api = ref.watch(backendApiClientProvider);
+    final data = await api.get('/inventory');
+    final rows = (data as List? ?? const <dynamic>[]);
 
-  for (final row in rows.whereType<Map>()) {
-    final materialType = row['material_type']?.toString().trim().toLowerCase();
-    final materialName = row['material_name']?.toString().trim();
-    if (materialType == 'fabric' && (materialName ?? '').isNotEmpty) {
-      options.add(materialName!);
+    for (final row in rows.whereType<Map>()) {
+      final materialType = row['material_type']?.toString().trim().toLowerCase();
+      final materialName = row['material_name']?.toString().trim();
+      if (materialType == 'fabric' && (materialName ?? '').isNotEmpty) {
+        options.add(materialName!);
+      }
     }
+  } catch (_) {
+    options.addAll(_fallbackFabricOptions);
+  }
+
+  if (options.isEmpty) {
+    options.addAll(_fallbackFabricOptions);
   }
 
   final sorted = options.toList()..sort();
   return sorted;
 });
+
+const _fallbackFabricOptions = <String>[
+  'Cotton',
+  'Dri-Fit',
+  'Polyester',
+];
 
 class ProductDetailArgs {
   final String? itemId;
@@ -108,6 +123,13 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
           final categories = categoriesAsync.asData?.value ?? const <CategoryModel>[];
           final isJersey = _isJerseyProduct(item, categories);
 
+          if ((_selectedFabric ?? '').isEmpty && fabrics.isNotEmpty) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted || (_selectedFabric ?? '').isNotEmpty) return;
+              setState(() => _selectedFabric = fabrics.first);
+            });
+          }
+
           return CustomScrollView(
             physics: const BouncingScrollPhysics(),
             slivers: [
@@ -122,10 +144,10 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                         child: Padding(
                           padding: const EdgeInsets.fromLTRB(28, 40, 28, 24),
                           child: (item.previewImageUrl ?? '').isNotEmpty
-                              ? Image.network(
-                                  item.previewImageUrl!,
+                              ? CachedProductImage(
+                                  imageUrl: item.previewImageUrl,
                                   fit: BoxFit.contain,
-                                  errorBuilder: (_, _, _) => const Icon(
+                                  fallback: const Icon(
                                     Icons.checkroom_rounded,
                                     size: 96,
                                     color: Color(0xFFCBD5E1),

@@ -106,6 +106,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   String? _validatePassword(String v) {
     if (v.isEmpty) return 'Password is required';
+    if (_tab != AuthTab.register) return null;
     if (v.length < 8) return 'Password must be at least 8 characters';
     if (!RegExp(r'[A-Z]').hasMatch(v)) {
       return 'Password must include at least one uppercase letter';

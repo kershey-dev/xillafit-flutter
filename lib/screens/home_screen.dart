@@ -6,6 +6,7 @@ import 'package:xillafit_flutter/features/catalog/presentation/catalog_providers
 import 'package:xillafit_flutter/features/cart/presentation/cart_provider.dart';
 import 'package:xillafit_flutter/screens/product_detail_screen.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
+import 'package:xillafit_flutter/widgets/common/cached_product_image.dart';
 
 enum _HomeSort { newest, priceLow, priceHigh, name }
 
@@ -47,6 +48,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _refreshCatalog() async {
+    await Future.wait([
+      ref.refresh(categoriesProvider.future),
+      ref.refresh(clothingItemsProvider.future),
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
     final itemsAsync = ref.watch(clothingItemsProvider);
@@ -75,31 +83,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             final heroItem = visibleItems.isNotEmpty ? visibleItems.first : null;
             final flashItems = visibleItems.take(4).toList();
 
-            return CustomScrollView(
-              controller: _scrollController,
-              physics: const BouncingScrollPhysics(),
-              slivers: [
-                SliverPadding(
-                  padding: EdgeInsets.fromLTRB(18, 10, 18, 24 + safeBottom),
-                  sliver: SliverList(
-                    delegate: SliverChildListDelegate([
-                      _topHeader(),
-                      const SizedBox(height: 18),
-                      _searchRow(),
-                      const SizedBox(height: 16),
-                      if (heroItem != null) _promoBanner(heroItem),
-                      if (heroItem != null) const SizedBox(height: 20),
-                      _sectionTitle('Popular Category'),
-                      const SizedBox(height: 12),
-                      _categoryScroller(categories),
-                      const SizedBox(height: 20),
-                      _flashHeader(),
-                      const SizedBox(height: 12),
-                      _flashGrid(flashItems, categories),
-                    ]),
-                  ),
+            return RefreshIndicator(
+              onRefresh: _refreshCatalog,
+              color: AppColors.goldDark,
+              child: CustomScrollView(
+                controller: _scrollController,
+                physics: const AlwaysScrollableScrollPhysics(
+                  parent: BouncingScrollPhysics(),
                 ),
-              ],
+                slivers: [
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(18, 10, 18, 24 + safeBottom),
+                    sliver: SliverList(
+                      delegate: SliverChildListDelegate([
+                        _topHeader(),
+                        const SizedBox(height: 18),
+                        _searchRow(),
+                        const SizedBox(height: 16),
+                        if (heroItem != null) _promoBanner(heroItem),
+                        if (heroItem != null) const SizedBox(height: 20),
+                        _sectionTitle('Popular Category'),
+                        const SizedBox(height: 12),
+                        _categoryScroller(categories),
+                        const SizedBox(height: 20),
+                        _flashHeader(),
+                        const SizedBox(height: 12),
+                        _flashGrid(flashItems, categories),
+                      ]),
+                    ),
+                  ),
+                ],
+              ),
             );
           },
         ),
@@ -553,12 +567,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         child: (item.previewImageUrl ?? '').isNotEmpty
                             ? ClipRRect(
                                 borderRadius: BorderRadius.circular(18),
-                                child: Image.network(
-                                  item.previewImageUrl!,
+                                child: CachedProductImage(
+                                  imageUrl: item.previewImageUrl,
                                   fit: BoxFit.cover,
                                   width: double.infinity,
                                   height: double.infinity,
-                                  errorBuilder: (_, _, _) => const Icon(
+                                  fallback: const Icon(
                                     Icons.checkroom_rounded,
                                     size: 42,
                                     color: Color(0xFFB6BCC5),

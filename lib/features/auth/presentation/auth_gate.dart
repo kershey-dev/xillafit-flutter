@@ -11,17 +11,23 @@ class AuthGate extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final authRepository = ref.watch(authRepositoryProvider);
+    final rememberedSession = authRepository.hasRememberedSession;
     final sessionAsync = ref.watch(authSessionProvider);
     return sessionAsync.when(
       skipLoadingOnReload: true,
       data: (session) {
-        if (session != null) {
+        if (session != null || rememberedSession) {
           return const MainShell();
         }
         return const OnboardingScreen();
       },
-      loading: () => const _AuthBootstrapSplash(),
-      error: (Object error, StackTrace stack) => const OnboardingScreen(),
+      loading: () => rememberedSession
+          ? const MainShell()
+          : const _AuthBootstrapSplash(),
+      error: (Object error, StackTrace stack) => rememberedSession
+          ? const MainShell()
+          : const OnboardingScreen(),
     );
   }
 }

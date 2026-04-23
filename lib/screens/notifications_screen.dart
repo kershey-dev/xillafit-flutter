@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:xillafit_flutter/core/network/connectivity_status.dart';
 import 'package:xillafit_flutter/features/notifications/data/notifications_repository.dart';
 import 'package:xillafit_flutter/screens/order_tracking_screen.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
@@ -21,6 +22,9 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   List<AppNotificationItem> _items = const [];
   bool _loading = true;
   String? _error;
+  bool _showOfflineSnapshot = false;
+  DateTime? _lastSyncedAt;
+  bool? _lastOfflineState;
   RealtimeChannel? _channel;
 
   @override
@@ -48,11 +52,14 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     });
 
     try {
-      final items = await ref.read(notificationsRepositoryProvider).fetchMyNotifications();
+      final snapshot =
+          await ref.read(notificationsRepositoryProvider).fetchMyNotificationsSnapshot();
       if (!mounted) return;
       setState(() {
-        _items = items;
+        _items = snapshot.items;
         _loading = false;
+        _showOfflineSnapshot = snapshot.isOfflineSnapshot;
+        _lastSyncedAt = snapshot.syncedAt;
       });
     } catch (error) {
       if (!mounted) return;
@@ -112,6 +119,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final isOffline = ref.watch(isOfflineProvider).asData?.value ?? false;
+    _handleConnectivityTransition(isOffline);
 
     final body = RefreshIndicator(
       onRefresh: _load,
@@ -134,6 +143,10 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             ],
           ),
           const SizedBox(height: 10),
+          if (_showOfflineSnapshot) ...[
+            _OfflineSnapshotBanner(lastSyncedAt: _lastSyncedAt),
+            const SizedBox(height: 10),
+          ],
           if (_loading)
             const Padding(
               padding: EdgeInsets.only(top: 28),
@@ -186,6 +199,66 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       body: SafeArea(
         bottom: true,
         child: body,
+      ),
+    );
+  }
+
+  void _handleConnectivityTransition(bool isOffline) {
+    final previous = _lastOfflineState;
+    if (previous == null) {
+      _lastOfflineState = isOffline;
+      return;
+    }
+
+    if (previous && !isOffline) {
+      Future.microtask(_load);
+    }
+
+    _lastOfflineState = isOffline;
+  }
+}
+
+class _OfflineSnapshotBanner extends StatelessWidget {
+  const _OfflineSnapshotBanner({this.lastSyncedAt});
+
+  final DateTime? lastSyncedAt;
+
+  @override
+  Widget build(BuildContext context) {
+    final syncText = lastSyncedAt == null
+        ? 'Showing the last synced notifications.'
+        : 'Showing the last synced notifications from ${_formatTimestamp(lastSyncedAt!)}.';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF4E8),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFF5D1A7)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 1),
+            child: Icon(
+              Icons.cloud_off_rounded,
+              size: 18,
+              color: AppColors.goldDark,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '$syncText Updates will refresh when you reconnect.',
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.goldDark,
+                fontWeight: FontWeight.w700,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -273,4 +346,12 @@ String _timeAgo(DateTime? value) {
   if (diff.inDays < 1) return '${diff.inHours}h ago';
   if (diff.inDays < 7) return '${diff.inDays}d ago';
   return '${value.month}/${value.day}/${value.year}';
+}
+
+String _formatTimestamp(DateTime value) {
+  final local = value.toLocal();
+  final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+  final minute = local.minute.toString().padLeft(2, '0');
+  final suffix = local.hour >= 12 ? 'PM' : 'AM';
+  return '${local.month}/${local.day}/${local.year} $hour:$minute $suffix';
 }

@@ -48,16 +48,14 @@ class BackendApiClient {
     final session = _supabase.auth.currentSession;
     final token = session?.accessToken;
 
-    if (token == null || token.isEmpty) {
-      throw const BackendApiException('You need to sign in again.');
-    }
-
     final baseUri = Uri.parse(AppLinks.backendApiUrl);
     final uri = baseUri.resolve(path.startsWith('/') ? path.substring(1) : path);
     final headers = <String, String>{
       'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
     };
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
 
     http.Response response;
     switch (method) {

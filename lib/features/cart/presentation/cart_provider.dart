@@ -7,22 +7,26 @@ class CartState {
   const CartState({
     this.items = const [],
     this.isLoading = false,
+    this.hasPendingSync = false,
     this.error,
   });
 
   final List<CartLineItem> items;
   final bool isLoading;
+  final bool hasPendingSync;
   final String? error;
 
   CartState copyWith({
     List<CartLineItem>? items,
     bool? isLoading,
+    bool? hasPendingSync,
     String? error,
     bool clearError = false,
   }) {
     return CartState(
       items: items ?? this.items,
       isLoading: isLoading ?? this.isLoading,
+      hasPendingSync: hasPendingSync ?? this.hasPendingSync,
       error: clearError ? null : (error ?? this.error),
     );
   }
@@ -59,10 +63,13 @@ class CartNotifier extends Notifier<CartState> {
 
   Future<void> refreshCart() async {
     await _runLoading(() async {
-      final items = await ref.read(cartRepositoryProvider).fetchCart();
+      final repository = ref.read(cartRepositoryProvider);
+      final items = await repository.fetchCart();
+      final hasPendingSync = await repository.hasPendingSync();
       state = state.copyWith(
         items: items,
         isLoading: false,
+        hasPendingSync: hasPendingSync,
         clearError: true,
       );
     });
@@ -90,17 +97,24 @@ class CartNotifier extends Notifier<CartState> {
     final nextQuantity = (existing?.quantity ?? 0) + quantity;
 
     return _runLoading(() async {
-      final items = await ref.read(cartRepositoryProvider).addItem(
+      final repository = ref.read(cartRepositoryProvider);
+      final items = await repository.addItem(
             productId: item.id,
             quantity: nextQuantity,
+            productName: item.name,
+            productImage: item.previewImageUrl,
+            productPrice: item.basePrice,
+            productCategory: item.description,
             size: size,
             fabric: fabric,
             customName: customName,
             customNumber: customNumber,
           );
+      final hasPendingSync = await repository.hasPendingSync();
       state = state.copyWith(
         items: items,
         isLoading: false,
+        hasPendingSync: hasPendingSync,
         clearError: true,
       );
     });
@@ -111,38 +125,89 @@ class CartNotifier extends Notifier<CartState> {
       return removeItem(line.cartId);
     }
 
-    return _runLoading(() async {
-      final items = await ref.read(cartRepositoryProvider).addItem(
-            productId: line.item.id,
-            quantity: quantity,
-            size: line.size,
-            fabric: line.fabric,
-            customName: line.customName,
-            customNumber: line.customNumber,
-          );
+    final previous = state;
+    final updatedItems = [
+      for (final item in state.items)
+        if (item.cartId == line.cartId)
+          item.copyWith(quantity: quantity)
+        else
+          item,
+    ];
+    state = state.copyWith(
+      items: updatedItems,
+      isLoading: true,
+      clearError: true,
+    );
+
+    try {
+      final repository = ref.read(cartRepositoryProvider);
+      final items = await repository.addItem(
+        productId: line.item.id,
+        quantity: quantity,
+        productName: line.item.name,
+        productImage: line.item.previewImageUrl,
+        productPrice: line.item.basePrice,
+        productCategory: line.item.description,
+        size: line.size,
+        fabric: line.fabric,
+        customName: line.customName,
+        customNumber: line.customNumber,
+      );
+      final hasPendingSync = await repository.hasPendingSync();
       state = state.copyWith(
         items: items,
         isLoading: false,
+        hasPendingSync: hasPendingSync,
         clearError: true,
       );
-    });
+      return true;
+    } catch (error) {
+      state = previous.copyWith(
+        isLoading: false,
+        error: error.toString(),
+      );
+      return false;
+    }
   }
 
   Future<bool> removeItem(String cartId) async {
-    return _runLoading(() async {
-      final items = await ref.read(cartRepositoryProvider).removeItem(cartId);
+    final previous = state;
+    final updatedItems = [
+      for (final item in state.items)
+        if (item.cartId != cartId) item,
+    ];
+    state = state.copyWith(
+      items: updatedItems,
+      isLoading: true,
+      clearError: true,
+    );
+
+    try {
+      final repository = ref.read(cartRepositoryProvider);
+      final items = await repository.removeItem(cartId);
+      final hasPendingSync = await repository.hasPendingSync();
       state = state.copyWith(
         items: items,
         isLoading: false,
+        hasPendingSync: hasPendingSync,
         clearError: true,
       );
-    });
+      return true;
+    } catch (error) {
+      state = previous.copyWith(
+        isLoading: false,
+        error: error.toString(),
+      );
+      return false;
+    }
   }
 
   Future<bool> clear() async {
     return _runLoading(() async {
-      await ref.read(cartRepositoryProvider).clear();
-      state = const CartState();
+      final repository = ref.read(cartRepositoryProvider);
+      await repository.clear();
+      final hasPendingSync = await repository.hasPendingSync();
+      state = CartState(hasPendingSync: hasPendingSync);
     });
   }
 
@@ -154,6 +219,7 @@ class CartNotifier extends Notifier<CartState> {
     } catch (error) {
       state = state.copyWith(
         isLoading: false,
+        hasPendingSync: state.hasPendingSync,
         error: error.toString(),
       );
       return false;

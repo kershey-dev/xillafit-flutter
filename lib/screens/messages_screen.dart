@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:xillafit_flutter/features/messages/data/messages_repository.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
 import 'package:xillafit_flutter/widgets/common/app_card.dart';
+import 'package:xillafit_flutter/widgets/common/cached_product_image.dart';
 
 class MessagesScreen extends ConsumerStatefulWidget {
   static const routeName = '/messages';
@@ -282,26 +283,10 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
                                             minHeight: 96,
                                             maxHeight: 220,
                                           ),
-                                          child: Image.network(
-                                            message.imageUrl!,
+                                          child: CachedProductImage(
+                                            imageUrl: message.imageUrl,
                                             fit: BoxFit.cover,
-                                            loadingBuilder: (context, child, progress) {
-                                              if (progress == null) return child;
-                                              return Container(
-                                                width: 220,
-                                                height: 140,
-                                                color: mine
-                                                    ? Colors.white.withValues(alpha: 0.28)
-                                                    : const Color(0xFFF8F8F8),
-                                                alignment: Alignment.center,
-                                                child: const SizedBox(
-                                                  width: 22,
-                                                  height: 22,
-                                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                                ),
-                                              );
-                                            },
-                                            errorBuilder: (_, _, _) => Container(
+                                            fallback: Container(
                                               width: 220,
                                               height: 140,
                                               color: mine

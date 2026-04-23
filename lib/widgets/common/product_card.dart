@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:xillafit_flutter/app_colors.dart';
 import 'package:xillafit_flutter/app_radius.dart';
 import 'package:xillafit_flutter/app_text_styles.dart';
+import 'package:xillafit_flutter/widgets/common/cached_product_image.dart';
 import 'package:xillafit_flutter/widgets/common/dark_button.dart';
 import 'package:xillafit_flutter/widgets/common/primary_button.dart';
 
@@ -74,10 +75,10 @@ class ProductCard extends StatelessWidget {
                         ),
                       ),
                       if (imageUrl != null && imageUrl!.isNotEmpty)
-                        Image.network(
-                          imageUrl!,
+                        CachedProductImage(
+                          imageUrl: imageUrl,
                           fit: BoxFit.cover,
-                          errorBuilder: (BuildContext context, Object error, StackTrace? stackTrace) => _imageFallback(),
+                          fallback: _imageFallback(),
                         )
                       else
                         _imageFallback(),

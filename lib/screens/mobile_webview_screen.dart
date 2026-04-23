@@ -8,8 +8,8 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:xillafit_flutter/core/config/app_links.dart';
 import 'package:xillafit_flutter/core/links/mobile_link_handler.dart';
 import 'package:xillafit_flutter/features/checkout/data/checkout_repository.dart';
-import 'package:xillafit_flutter/screens/cart_placeholder_screen.dart';
 import 'package:xillafit_flutter/screens/main_shell.dart';
+import 'package:xillafit_flutter/screens/payment_submission_screen.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
 
 enum MobileWebViewMode { customizer, payment }
@@ -468,7 +468,7 @@ class _MobileWebViewScreenState extends State<MobileWebViewScreen> {
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Design received. Opening cart...')),
+      const SnackBar(content: Text('Design received. Preparing checkout...')),
     );
     debugPrint(
       '[WEBVIEW] pushing payment screen designId=${design.designId} '
@@ -478,9 +478,9 @@ class _MobileWebViewScreenState extends State<MobileWebViewScreen> {
       if (!mounted) return;
       final rootNavigator = Navigator.of(context, rootNavigator: true);
       debugPrint(
-        '[WEBVIEW] root push cart screen '
+        '[WEBVIEW] root push payment submission '
         'canPop=${rootNavigator.canPop()} '
-        'route=${CartPlaceholderScreen.routeName}',
+        'route=${PaymentSubmissionScreen.routeName}',
       );
       unawaited(_openCheckoutFromEmbeddedCustomizer(rootNavigator, design));
     });
@@ -495,16 +495,17 @@ class _MobileWebViewScreenState extends State<MobileWebViewScreen> {
 
     try {
       await navigator.pushNamedAndRemoveUntil(
-        CartPlaceholderScreen.routeName,
+        PaymentSubmissionScreen.routeName,
         (route) => route.settings.name == MainShell.routeName || route.isFirst,
+        arguments: PaymentSubmissionArgs.customDesign(design: design),
       );
-      debugPrint('[WEBVIEW] cart screen completed');
+      debugPrint('[WEBVIEW] payment submission screen completed');
     } catch (error, stackTrace) {
-      debugPrint('[WEBVIEW] cart screen push failed error=$error');
+      debugPrint('[WEBVIEW] payment submission push failed error=$error');
       debugPrint('$stackTrace');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open cart: $error')),
+        SnackBar(content: Text('Could not prepare checkout: $error')),
       );
     }
   }

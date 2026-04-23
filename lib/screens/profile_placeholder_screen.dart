@@ -10,6 +10,7 @@ import 'package:xillafit_flutter/features/auth/presentation/auth_providers.dart'
 import 'package:xillafit_flutter/features/auth/data/bulacan_locations.dart';
 import 'package:xillafit_flutter/features/profile/data/profile_model.dart';
 import 'package:xillafit_flutter/features/profile/presentation/profile_providers.dart';
+import 'package:xillafit_flutter/core/network/connectivity_status.dart';
 import 'package:xillafit_flutter/screens/order_history_screen.dart';
 import 'package:xillafit_flutter/widgets/common/primary_button.dart';
 
@@ -359,6 +360,7 @@ class _ProfilePlaceholderScreenState
     final authUser = session?.user;
     final authEmail = session?.user.email;
     final profileAsync = ref.watch(currentProfileProvider);
+    final isOffline = ref.watch(isOfflineProvider).asData?.value ?? false;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -450,7 +452,9 @@ class _ProfilePlaceholderScreenState
                     ),
                     const SizedBox(height: AppSpacing.lg),
                     profileAsync.when(
-                      loading: () => _ProfileLoadingCard(),
+                      loading: () => isOffline
+                          ? const _ProfileOfflineCard()
+                          : _ProfileLoadingCard(),
                       error: (Object error, StackTrace stack) => _ProfileErrorCard(
                         error: error,
                         onRetry: () => ref.invalidate(currentProfileProvider),
@@ -1049,6 +1053,70 @@ class _ProfileErrorCard extends StatelessWidget {
             child: TextButton(
               onPressed: onRetry,
               child: const Text('Retry'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileOfflineCard extends StatelessWidget {
+  const _ProfileOfflineCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: AppColors.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D0F172A),
+            blurRadius: 24,
+            offset: Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF7E6),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.cloud_off_rounded,
+                  color: AppColors.goldDark,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  'Offline mode',
+                  style: AppTextStyles.body.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.text,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            'Reconnect to load profile details.',
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.muted,
+              height: 1.4,
             ),
           ),
         ],

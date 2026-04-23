@@ -1,13 +1,21 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:xillafit_flutter/app_spacing.dart';
 import 'package:xillafit_flutter/features/cart/presentation/cart_provider.dart';
+import 'package:xillafit_flutter/features/checkout/data/checkout_repository.dart';
 import 'package:xillafit_flutter/screens/payment_submission_screen.dart';
 import 'package:xillafit_flutter/widgets/app_styles.dart';
+import 'package:xillafit_flutter/widgets/common/cached_product_image.dart';
 import 'package:xillafit_flutter/widgets/common/primary_button.dart';
 import 'package:xillafit_flutter/widgets/common/quantity_stepper.dart';
+
+class CartPlaceholderArgs {
+  const CartPlaceholderArgs({
+    this.customDesign,
+  });
+
+  final CustomDesignDraft? customDesign;
+}
 
 class CartPlaceholderScreen extends ConsumerStatefulWidget {
   static const routeName = '/cart';
@@ -20,14 +28,27 @@ class CartPlaceholderScreen extends ConsumerStatefulWidget {
 }
 
 class _CartPlaceholderScreenState extends ConsumerState<CartPlaceholderScreen> {
+  Future<void> _refreshCart() async {
+    await ref.read(cartProvider.notifier).refreshCart();
+  }
+
   @override
   void initState() {
     super.initState();
-    Future.microtask(() => ref.read(cartProvider.notifier).refreshCart());
+    Future.microtask(() {
+      final cartState = ref.read(cartProvider);
+      if (cartState.items.isEmpty && !cartState.isLoading) {
+        return _refreshCart();
+      }
+      return null;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    final routeArgs = ModalRoute.of(context)?.settings.arguments;
+    final customDesign =
+        routeArgs is CartPlaceholderArgs ? routeArgs.customDesign : null;
     final cartState = ref.watch(cartProvider);
     final lines = cartState.items;
     final subtotal = ref.watch(cartSubtotalProvider);
@@ -57,28 +78,33 @@ class _CartPlaceholderScreenState extends ConsumerState<CartPlaceholderScreen> {
         backgroundColor: AppColors.surface,
         appBar: const _CartAppBar(),
         body: SafeArea(
-          child: Center(
-            child: Padding(
+          child: RefreshIndicator(
+            onRefresh: _refreshCart,
+            color: AppColors.goldDark,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(AppSpacing.xl),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.shopping_bag_outlined,
-                    size: 36,
-                    color: AppColors.goldDark,
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  Text('Your cart is empty', style: AppTextStyles.sectionTitle),
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(
+              children: [
+                SizedBox(height: MediaQuery.sizeOf(context).height * 0.18),
+                const Icon(
+                  Icons.shopping_bag_outlined,
+                  size: 36,
+                  color: AppColors.goldDark,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Center(
+                  child: Text('Your cart is empty', style: AppTextStyles.sectionTitle),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Center(
+                  child: Text(
                     'Add items from Shop to see them here.',
                     style: AppTextStyles.caption.copyWith(
                       color: AppColors.muted,
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -89,13 +115,84 @@ class _CartPlaceholderScreenState extends ConsumerState<CartPlaceholderScreen> {
       backgroundColor: AppColors.surface,
       appBar: const _CartAppBar(),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        child: RefreshIndicator(
+          onRefresh: _refreshCart,
+          color: AppColors.goldDark,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(16),
             children: [
               Text('CART', style: AppTextStyles.heading),
               const SizedBox(height: 12),
+              if (customDesign != null) ...[
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFFAF2),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFB7E4C7)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Custom design ready for checkout',
+                        style: AppTextStyles.body.copyWith(
+                          color: const Color(0xFF1F7A3D),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${customDesign.name} will use the custom-order payment flow when you continue.',
+                        style: AppTextStyles.caption.copyWith(
+                          color: const Color(0xFF1F7A3D),
+                          fontWeight: FontWeight.w700,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (cartState.hasPendingSync) ...[
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF4E8),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFF5D1A7)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(top: 1),
+                        child: Icon(
+                          Icons.cloud_off_rounded,
+                          size: 18,
+                          color: AppColors.goldDark,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Cart will sync when online.',
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.goldDark,
+                            fontWeight: FontWeight.w700,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               ...lines.map(
                 (line) => Container(
                   margin: const EdgeInsets.only(bottom: 12),
@@ -223,6 +320,11 @@ class _CartPlaceholderScreenState extends ConsumerState<CartPlaceholderScreen> {
                           : () => Navigator.pushNamed(
                                 context,
                                 PaymentSubmissionScreen.routeName,
+                                arguments: customDesign == null
+                                    ? null
+                                    : PaymentSubmissionArgs.customDesign(
+                                        design: customDesign,
+                                      ),
                               ),
                     ),
                   ],
@@ -243,28 +345,10 @@ class _CartPreviewImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final source = (imageUrl ?? '').trim();
-    if (source.isEmpty) {
-      return const Icon(Icons.checkroom_rounded);
-    }
-
-    if (source.startsWith('data:image/')) {
-      try {
-        final encoded = source.split(',').last;
-        return Image.memory(
-          base64Decode(encoded),
-          fit: BoxFit.contain,
-          errorBuilder: (_, _, _) => const Icon(Icons.checkroom_rounded),
-        );
-      } catch (_) {
-        return const Icon(Icons.checkroom_rounded);
-      }
-    }
-
-    return Image.network(
-      source,
+    return CachedProductImage(
+      imageUrl: imageUrl,
       fit: BoxFit.contain,
-      errorBuilder: (_, _, _) => const Icon(Icons.checkroom_rounded),
+      fallback: const Icon(Icons.checkroom_rounded),
     );
   }
 }

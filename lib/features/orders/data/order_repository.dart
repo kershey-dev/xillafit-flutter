@@ -1,7 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:xillafit_flutter/core/config/app_links.dart';
 import 'package:xillafit_flutter/core/network/backend_api_client.dart';
+import 'package:xillafit_flutter/core/storage/local_database.dart';
 import 'package:xillafit_flutter/features/cart/data/cart_repository.dart';
 import 'package:xillafit_flutter/features/checkout/data/checkout_repository.dart';
 
@@ -140,24 +144,95 @@ class OrderDetail {
   }
 }
 
+class OrderHistorySnapshot {
+  const OrderHistorySnapshot({
+    required this.orders,
+    this.syncedAt,
+    this.fromCache = false,
+  });
+
+  final List<OrderSummary> orders;
+  final DateTime? syncedAt;
+  final bool fromCache;
+}
+
+class OrderDetailSnapshot {
+  const OrderDetailSnapshot({
+    required this.order,
+    this.syncedAt,
+    this.fromCache = false,
+  });
+
+  final OrderDetail order;
+  final DateTime? syncedAt;
+  final bool fromCache;
+}
+
 class OrderRepository {
   OrderRepository({
     required BackendApiClient api,
-  }) : _api = api;
+    required SupabaseClient supabase,
+    required LocalDatabase localDatabase,
+  })  : _api = api,
+        _supabase = supabase,
+        _localDatabase = localDatabase;
 
   final BackendApiClient _api;
+  final SupabaseClient _supabase;
+  final LocalDatabase _localDatabase;
 
-  Future<List<OrderSummary>> fetchMyOrders() async {
-    final data = await _api.get('/orders/me/history');
-    final rows = (data as List? ?? const <dynamic>[]);
-    return rows
-        .map((row) => OrderSummary.fromMap(Map<String, dynamic>.from(row as Map)))
-        .toList();
+  String? get _currentUserId => _supabase.auth.currentUser?.id;
+
+  Future<OrderHistorySnapshot> fetchMyOrders() async {
+    final userId = _requireUserId();
+    try {
+      final data = await _api.get('/orders/me/history');
+      final rows = (data as List? ?? const <dynamic>[])
+          .map((row) => Map<String, dynamic>.from(row as Map))
+          .toList(growable: false);
+      final syncedAt = DateTime.now().toUtc();
+      await _localDatabase.replaceOrderSummaries(
+        userId,
+        rows
+            .map((row) => {
+                  'id': row['id']?.toString() ?? '',
+                  'payload_json': jsonEncode(row),
+                })
+            .toList(growable: false),
+        syncedAt: syncedAt.toIso8601String(),
+      );
+      return OrderHistorySnapshot(
+        orders: rows.map(OrderSummary.fromMap).toList(growable: false),
+        syncedAt: syncedAt,
+      );
+    } catch (_) {
+      final cached = await _loadCachedOrderHistory(userId);
+      if (cached.orders.isEmpty) rethrow;
+      return cached;
+    }
   }
 
-  Future<OrderDetail> fetchOrderDetail(String orderId) async {
-    final data = await _api.get('/orders/me/$orderId');
-    return OrderDetail.fromMap(Map<String, dynamic>.from(data as Map));
+  Future<OrderDetailSnapshot> fetchOrderDetail(String orderId) async {
+    final userId = _requireUserId();
+    try {
+      final data = await _api.get('/orders/me/$orderId');
+      final row = Map<String, dynamic>.from(data as Map);
+      final syncedAt = DateTime.now().toUtc();
+      await _localDatabase.saveOrderDetail(
+        userId,
+        orderId,
+        jsonEncode(row),
+        syncedAt: syncedAt.toIso8601String(),
+      );
+      return OrderDetailSnapshot(
+        order: OrderDetail.fromMap(row),
+        syncedAt: syncedAt,
+      );
+    } catch (_) {
+      final cached = await _loadCachedOrderDetail(userId, orderId);
+      if (cached == null) rethrow;
+      return cached;
+    }
   }
 
   Future<CheckoutSessionResult> createBalanceCheckoutSession(String orderId) async {
@@ -178,19 +253,72 @@ class OrderRepository {
     );
     return CheckoutSessionResult.fromMap(Map<String, dynamic>.from(data as Map));
   }
+
+  Future<OrderHistorySnapshot> _loadCachedOrderHistory(String userId) async {
+    final rows = await _localDatabase.loadOrderSummaries(userId);
+    DateTime? syncedAt;
+    final orders = <OrderSummary>[];
+    for (final row in rows) {
+      final payload = row['payload_json']?.toString();
+      if ((payload ?? '').isEmpty) continue;
+      try {
+        final decoded = jsonDecode(payload!);
+        if (decoded is! Map) continue;
+        orders.add(OrderSummary.fromMap(Map<String, dynamic>.from(decoded)));
+        syncedAt ??= _asDateTime(row['synced_at']);
+      } catch (_) {
+        // Skip malformed cached rows and keep any remaining valid entries.
+      }
+    }
+    return OrderHistorySnapshot(
+      orders: orders,
+      syncedAt: syncedAt,
+      fromCache: orders.isNotEmpty,
+    );
+  }
+
+  Future<OrderDetailSnapshot?> _loadCachedOrderDetail(
+    String userId,
+    String orderId,
+  ) async {
+    final row = await _localDatabase.loadOrderDetail(userId, orderId);
+    final payload = row?['payload_json']?.toString();
+    if ((payload ?? '').isEmpty) return null;
+    try {
+      final decoded = jsonDecode(payload!);
+      if (decoded is! Map) return null;
+      return OrderDetailSnapshot(
+        order: OrderDetail.fromMap(Map<String, dynamic>.from(decoded)),
+        syncedAt: _asDateTime(row?['synced_at']),
+        fromCache: true,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _requireUserId() {
+    final userId = _currentUserId;
+    if (userId == null || userId.isEmpty) {
+      throw const BackendApiException('You need to sign in again.');
+    }
+    return userId;
+  }
 }
 
 final orderRepositoryProvider = Provider<OrderRepository>((ref) {
   return OrderRepository(
     api: ref.watch(backendApiClientProvider),
+    supabase: ref.watch(cartSupabaseClientProvider),
+    localDatabase: LocalDatabase.instance,
   );
 });
 
-final orderHistoryProvider = FutureProvider<List<OrderSummary>>((ref) async {
+final orderHistoryProvider = FutureProvider<OrderHistorySnapshot>((ref) async {
   return ref.watch(orderRepositoryProvider).fetchMyOrders();
 });
 
-final orderDetailProvider = FutureProvider.family<OrderDetail, String>((ref, orderId) async {
+final orderDetailProvider = FutureProvider.family<OrderDetailSnapshot, String>((ref, orderId) async {
   return ref.watch(orderRepositoryProvider).fetchOrderDetail(orderId);
 });
 

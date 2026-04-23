@@ -10,6 +10,15 @@ class AuthRepository {
 
   User? get currentUser => _client.auth.currentUser;
 
+  bool get hasRememberedSession {
+    final session = currentSession;
+    if (session == null) return false;
+
+    final accessToken = session.accessToken.trim();
+    final refreshToken = session.refreshToken?.trim() ?? '';
+    return accessToken.isNotEmpty && refreshToken.isNotEmpty;
+  }
+
   Stream<AuthState> get onAuthStateChange => _client.auth.onAuthStateChange;
 
   Future<AuthResponse> signInWithEmail({
